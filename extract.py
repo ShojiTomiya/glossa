@@ -4,9 +4,23 @@ from ebooklib import epub
 from bs4 import BeautifulSoup
 
 
+def _page_text(page: fitz.Page) -> str:
+    # "blocks" groups text the way it's laid out on the page (paragraphs,
+    # captions, etc.) with each block's own text still broken into raw print
+    # lines — join those with spaces so a paragraph isn't split mid-sentence,
+    # then join blocks (paragraphs) with newlines.
+    paragraphs = [
+        " ".join(text.split("\n")).strip()
+        for *_, text, _, block_type in page.get_text("blocks")
+        if block_type == 0
+    ]
+    paragraphs = [p for p in paragraphs if p]
+    return "\n".join(paragraphs) if paragraphs else page.get_text().strip()
+
+
 def extract_pdf_text(path: str) -> str:
     doc = fitz.open(path)
-    pages = [page.get_text() for page in doc]
+    pages = [_page_text(page) for page in doc]
     pages = [p for p in pages if p.strip()]
     if not pages:
         raise ValueError("PDF appears to be a scan with no extractable text (OCR not supported).")
