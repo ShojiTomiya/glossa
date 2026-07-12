@@ -8,8 +8,7 @@ from pydantic import BaseModel
 
 import storage
 import llm
-from pdf_extract import extract_text as extract_pdf_text
-from epub_extract import extract_text as extract_epub_text
+from extract import extract_pdf_text, extract_epub_text
 
 app = FastAPI()
 
@@ -92,7 +91,10 @@ def delete_text(text_id: str):
 
 @app.post("/api/translate")
 def translate(req: TranslateRequest):
-    translation = llm.translate(req.phrase, req.source_lang, req.target_lang)
+    try:
+        translation = llm.translate(req.phrase, req.source_lang, req.target_lang)
+    except llm.RateLimitExceeded as e:
+        raise HTTPException(429, str(e))
     return {"translation": translation}
 
 
@@ -100,6 +102,8 @@ def translate(req: TranslateRequest):
 def explain(req: ExplainRequest):
     try:
         result = llm.explain(req.phrase, req.context, req.source_lang, req.target_lang)
+    except llm.RateLimitExceeded as e:
+        raise HTTPException(429, str(e))
     except Exception as e:
         raise HTTPException(502, f"LLM explain failed: {e}")
     return result

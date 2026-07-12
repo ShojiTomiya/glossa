@@ -1,12 +1,18 @@
 import json
 import re
 
-from openai import OpenAI, BadRequestError
+from openai import OpenAI, BadRequestError, RateLimitError
 
 from config import CONFIG, LANGUAGES
 from prompts import translate_messages, explain_messages, FIX_JSON_PROMPT
 
 client = OpenAI(base_url=CONFIG["base_url"], api_key=CONFIG["api_key"])
+
+RATE_LIMIT_MESSAGE = "Dzienny limit zapytań do API został wyczerpany. Spróbuj ponownie później."
+
+
+class RateLimitExceeded(Exception):
+    pass
 
 
 def _lang_name(code: str) -> str:
@@ -29,12 +35,16 @@ def _parse_json(text: str) -> tuple[dict | None, str | None]:
 
 def translate(phrase: str, source_lang: str, target_lang: str) -> str:
     messages = translate_messages(phrase, _lang_name(source_lang), _lang_name(target_lang))
-    response = client.chat.completions.create(
-        model=CONFIG["model"],
-        messages=messages,
-        temperature=0.2,
-        max_tokens=200,
-    )
+    try:
+        response = client.chat.completions.create(
+            model=CONFIG["model"],
+            messages=messages,
+            temperature=0.2,
+            max_tokens=300,
+            extra_body={"reasoning_effort": "low"},
+        )
+    except RateLimitError:
+        raise RateLimitExceeded(RATE_LIMIT_MESSAGE)
     return response.choices[0].message.content.strip()
 
 
@@ -47,10 +57,13 @@ def _call_explain(messages: list) -> str:
             model=CONFIG["model"],
             messages=messages,
             temperature=0.3,
-            max_tokens=800,
+            max_tokens=1500,
             response_format={"type": "json_object"},
+            extra_body={"reasoning_effort": "low"},
         )
         return response.choices[0].message.content
+    except RateLimitError:
+        raise RateLimitExceeded(RATE_LIMIT_MESSAGE)
     except BadRequestError as e:
         body = getattr(e.response, "json", lambda: {})()
         failed = body.get("error", {}).get("failed_generation", "")

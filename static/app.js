@@ -290,6 +290,10 @@ readerContent.addEventListener("mouseup", async () => {
       }),
     });
     const data = await res.json();
+    if (!res.ok) {
+      popupTranslation.textContent = data.detail || "Translation error";
+      return;
+    }
     popupTranslation.textContent = data.translation;
   } catch (e) {
     popupTranslation.textContent = "Translation error";
@@ -327,28 +331,38 @@ explainBtn.addEventListener("click", async () => {
 function renderExplain(data) {
   explainPanel.innerHTML = "";
 
-  if (data.translation) {
-    const translation = document.createElement("div");
-    translation.className = "explain-translation";
-    translation.textContent = data.translation;
-    explainPanel.appendChild(translation);
-  }
-
   if (Array.isArray(data.words) && data.words.length) {
     const table = document.createElement("table");
     table.className = "words-table";
     for (const w of data.words) {
       const row = document.createElement("tr");
+
       const text = document.createElement("td");
       text.className = "word-text";
       text.textContent = w.text || "";
+      if (w.base_form && w.base_form !== w.text) {
+        const base = document.createElement("span");
+        base.className = "word-base-form";
+        base.textContent = ` (${w.base_form})`;
+        text.appendChild(base);
+      }
+      row.appendChild(text);
+
+      const phonetic = document.createElement("td");
+      phonetic.className = "word-phonetic";
+      phonetic.textContent = w.phonetic || "";
+      row.appendChild(phonetic);
+
+      const translation = document.createElement("td");
+      translation.className = "word-translation";
+      translation.textContent = w.translation || "";
+      row.appendChild(translation);
+
       const details = document.createElement("td");
       details.className = "word-details";
-      details.textContent = [w.base_form, w.part_of_speech, w.grammatical_details]
-        .filter(Boolean)
-        .join(" · ");
-      row.appendChild(text);
+      details.textContent = [w.part_of_speech, w.grammatical_details].filter(Boolean).join(" · ");
       row.appendChild(details);
+
       table.appendChild(row);
     }
     explainPanel.appendChild(table);
@@ -359,13 +373,6 @@ function renderExplain(data) {
     explanation.className = "explain-text";
     explanation.textContent = data.explanation;
     explainPanel.appendChild(explanation);
-  }
-
-  if (data.example) {
-    const example = document.createElement("div");
-    example.className = "explain-example";
-    example.textContent = data.example;
-    explainPanel.appendChild(example);
   }
 }
 

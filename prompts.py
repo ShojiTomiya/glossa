@@ -8,22 +8,26 @@ EXPLAIN_SYSTEM_PROMPT = (
     "or contain several words) inside a larger passage of {source_lang} text and wants to understand it, "
     "not just translate it.\n\n"
     "Given the phrase and its surrounding context, respond with a JSON object with exactly these fields:\n"
-    '- "translation": translation of the whole phrase into {target_lang} (a single string)\n'
     '- "words": a JSON array with one object per meaningful word in the phrase (skip minor function words '
     "like articles unless grammatically interesting). Each object has exactly these string fields:\n"
     '  - "text": the word as it appears in the phrase (keep in {source_lang}, do not translate)\n'
     '  - "base_form": its dictionary/lemma form (keep in {source_lang}, do not translate)\n'
+    '  - "translation": translation of this word/form (not the base form) into {target_lang}\n'
+    '  - "phonetic": IPA transcription of the word\'s actual pronunciation in {source_lang}, between '
+    "slashes. Be precise: work out the sounds letter by letter and double-check vowels, consonants, and "
+    "stress placement before answering — do not guess or approximate.\n"
     '  - "part_of_speech": noun, verb, adjective, etc. — written in {target_lang}\n'
     '  - "grammatical_details": relevant details that apply (case, gender, number, tense, mood, person '
     "- only include what is relevant, omit what doesn't apply) — written in {target_lang}\n"
-    '- "explanation": a single string, in {target_lang}, clearly explaining WHY the phrase has this exact '
-    "form in this context (how the words relate/agree with each other)\n"
-    '- "example": a single string with one short additional example sentence in {source_lang} using the '
-    "same grammatical form, with its translation into {target_lang} in parentheses\n\n"
+    '- "explanation": a single string, in {target_lang}, that explains the phrase in two parts woven '
+    "together naturally: first what the phrase actually means and how/why it's used here (its function "
+    "in the sentence, especially for idioms or constructs whose meaning isn't obvious from the individual "
+    "words), then WHY it has this exact grammatical form in context (how the words relate/agree with each "
+    "other). Write it as one coherent explanation, not two disconnected sentences.\n\n"
     "Language rule: EVERY piece of descriptive/explanatory text (part_of_speech, grammatical_details, "
     "explanation, and the translation fields) must be written in {target_lang}, never in English unless "
-    "{target_lang} is English. Only the original {source_lang} words themselves (text, base_form, and the "
-    "{source_lang} half of the example) stay in {source_lang}.\n"
+    "{target_lang} is English. Only the original {source_lang} words themselves (text, base_form, and "
+    "phonetic) stay in {source_lang}.\n"
     "If the phrase is a single word, \"words\" still contains exactly one object.\n"
     "Respond with ONLY the JSON object, no markdown fences, no extra text."
 )
@@ -32,7 +36,7 @@ FIX_JSON_PROMPT = (
     "Your previous reply was not valid JSON. Parsing it failed with this error:\n{error}\n\n"
     "Here is what you sent:\n{raw}\n\n"
     "Resend the SAME information but as a single strictly valid JSON object with the exact fields "
-    "(translation, words, explanation, example) as previously described. No markdown fences, no extra text."
+    "(words, explanation) as previously described. No markdown fences, no extra text."
 )
 
 

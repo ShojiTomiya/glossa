@@ -291,7 +291,7 @@ dialog select {
   border-radius: 10px;
   box-shadow: var(--shadow);
   padding: 12px 14px;
-  max-width: 340px;
+  max-width: min(92vw, 520px);
   z-index: 1000;
 }
 
@@ -316,11 +316,6 @@ dialog select {
 
 #explain-panel.hidden { display: none; }
 
-.explain-translation {
-  font-weight: 600;
-  margin-bottom: 8px;
-}
-
 .words-table {
   width: 100%;
   border-collapse: collapse;
@@ -339,15 +334,27 @@ dialog select {
   padding-right: 10px !important;
 }
 
+.word-base-form {
+  color: var(--text-muted);
+  font-weight: 400;
+  font-size: 0.85em;
+}
+
+.word-phonetic {
+  color: var(--text-muted);
+  font-style: italic;
+  white-space: nowrap;
+  padding-right: 10px !important;
+}
+
+.word-translation {
+  padding-right: 10px !important;
+}
+
 .word-details {
   color: var(--text-muted);
 }
 
 .explain-text {
   margin: 8px 0;
-}
-
-.explain-example {
-  font-style: italic;
-  color: var(--text-muted);
 }
