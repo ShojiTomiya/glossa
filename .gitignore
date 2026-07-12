@@ -1,0 +1,6 @@
+.env
+__pycache__/
+*.pyc
+texts/*.txt
+texts/index.json
+.DS_Store

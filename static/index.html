@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>lexplain</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<div id="topbar">
+  <span class="brand" id="brand">lexplain</span>
+
+  <div id="topbar-reader-actions" class="topbar-actions" style="display:none">
+    <button id="back-btn" class="btn btn-sm">&larr; Library</button>
+    <span id="reader-title"></span>
+    <label class="field-inline">
+      Translate to
+      <select id="target-lang-select">
+        <option value="en">English</option>
+        <option value="pl">Polish</option>
+        <option value="de">German</option>
+        <option value="es">Spanish</option>
+        <option value="it">Italian</option>
+        <option value="fr">French</option>
+      </select>
+    </label>
+  </div>
+
+  <button id="settings-btn" class="btn btn-icon" title="Settings" aria-label="Settings">&#9881;</button>
+</div>
+
+<div id="library-view" class="view">
+  <div class="library-toolbar">
+    <label class="field-inline">
+      Filter by language
+      <select id="filter-lang-select">
+        <option value="">All languages</option>
+        <option value="de">German</option>
+        <option value="es">Spanish</option>
+        <option value="it">Italian</option>
+        <option value="fr">French</option>
+        <option value="en">English</option>
+      </select>
+    </label>
+    <button id="upload-open-btn" class="btn btn-sm btn-primary">Upload</button>
+  </div>
+
+  <ul id="text-list"></ul>
+</div>
+
+<div id="reader-view" class="view" style="display:none">
+  <div id="reader-content"></div>
+</div>
+
+<dialog id="upload-dialog">
+  <h2>Upload text</h2>
+  <form id="upload-form">
+    <label class="field-block">
+      File (.pdf, .epub or .txt)
+      <input type="file" id="file-input" accept=".pdf,.epub,.txt" required>
+    </label>
+    <label class="field-block">
+      Title
+      <input type="text" id="title-input" placeholder="Title" required>
+    </label>
+    <label class="field-block">
+      Source language
+      <select id="source-lang-input">
+        <option value="de">German</option>
+        <option value="es">Spanish</option>
+        <option value="it">Italian</option>
+        <option value="fr">French</option>
+        <option value="en">English</option>
+      </select>
+    </label>
+    <div class="dialog-actions">
+      <button type="button" id="upload-cancel-btn" class="btn">Cancel</button>
+      <button type="submit" class="btn btn-primary">Upload</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="edit-dialog">
+  <h2>Edit text</h2>
+  <form id="edit-form">
+    <label class="field-block">
+      Title
+      <input type="text" id="edit-title-input" required>
+    </label>
+    <label class="field-block">
+      Source language
+      <select id="edit-source-lang-input">
+        <option value="de">German</option>
+        <option value="es">Spanish</option>
+        <option value="it">Italian</option>
+        <option value="fr">French</option>
+        <option value="en">English</option>
+      </select>
+    </label>
+    <div class="dialog-actions">
+      <button type="button" id="edit-cancel-btn" class="btn">Cancel</button>
+      <button type="submit" class="btn btn-primary">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="settings-dialog">
+  <h2>Settings</h2>
+
+  <fieldset>
+    <legend>Theme</legend>
+    <label class="field-radio"><input type="radio" name="theme" value="light"> Light</label>
+    <label class="field-radio"><input type="radio" name="theme" value="default"> Default</label>
+    <label class="field-radio"><input type="radio" name="theme" value="dark"> Dark</label>
+  </fieldset>
+
+  <fieldset id="font-settings-fieldset">
+    <legend>Reading font</legend>
+    <label class="field-block">
+      Font family
+      <select id="font-family-select">
+        <option value="sans">Sans-serif</option>
+        <option value="serif">Serif</option>
+      </select>
+    </label>
+    <label class="field-block">
+      Font size
+      <select id="font-size-select">
+        <option value="16">Small</option>
+        <option value="18">Medium</option>
+        <option value="21">Large</option>
+        <option value="24">Extra large</option>
+      </select>
+    </label>
+  </fieldset>
+
+  <div class="dialog-actions">
+    <button type="button" id="settings-close-btn" class="btn btn-primary">Close</button>
+  </div>
+</dialog>
+
+<div id="popup" class="hidden">
+  <div id="popup-translation"></div>
+  <button id="explain-btn" class="btn">Explain</button>
+  <div id="explain-panel" class="hidden"></div>
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
