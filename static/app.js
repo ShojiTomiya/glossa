@@ -14,6 +14,7 @@ const readerTitle = document.getElementById("reader-title");
 const readerContent = document.getElementById("reader-content");
 const targetLangSelect = document.getElementById("target-lang-select");
 const backBtn = document.getElementById("back-btn");
+const bookmarkJumpBtn = document.getElementById("bookmark-jump-btn");
 const popup = document.getElementById("popup");
 const popupTranslation = document.getElementById("popup-translation");
 const explainBtn = document.getElementById("explain-btn");
@@ -40,7 +41,83 @@ const fontSettingsFieldset = document.getElementById("font-settings-fieldset");
 
 let currentText = null; // {id, title, source_lang, content}
 let currentSelection = null; // {phrase, context}
+let currentBookmarkLine = null;
 let allTexts = [];
+
+/* ---------- Bookmarks ---------- */
+
+function bookmarkKey(textId) {
+  return `lexplain-bookmark-${textId}`;
+}
+
+function loadBookmark(textId) {
+  const v = localStorage.getItem(bookmarkKey(textId));
+  return v === null ? null : parseInt(v, 10);
+}
+
+function setBookmark(lineIndex) {
+  const prevDot = readerContent.querySelector(".bookmark-dot.active");
+  if (prevDot) prevDot.classList.remove("active");
+
+  currentBookmarkLine = lineIndex;
+  if (lineIndex === null) {
+    localStorage.removeItem(bookmarkKey(currentText.id));
+  } else {
+    localStorage.setItem(bookmarkKey(currentText.id), String(lineIndex));
+    const lineDiv = readerContent.querySelector(`.reader-line[data-line-index="${lineIndex}"]`);
+    if (lineDiv) lineDiv.querySelector(".bookmark-dot").classList.add("active");
+  }
+
+  updateBookmarkButton();
+}
+
+function toggleBookmark(lineIndex) {
+  setBookmark(currentBookmarkLine === lineIndex ? null : lineIndex);
+}
+
+// Shows an up/down arrow pointing toward the bookmarked line when it's
+// scrolled out of view, and hides the button entirely once it's on screen.
+function updateBookmarkButton() {
+  if (readerView.style.display !== "block" || currentBookmarkLine === null) {
+    bookmarkJumpBtn.classList.add("hidden");
+    return;
+  }
+  const lineDiv = readerContent.querySelector(`.reader-line[data-line-index="${currentBookmarkLine}"]`);
+  if (!lineDiv) {
+    bookmarkJumpBtn.classList.add("hidden");
+    return;
+  }
+  const rect = lineDiv.getBoundingClientRect();
+  if (rect.bottom < 0) {
+    bookmarkJumpBtn.textContent = "↑";
+    bookmarkJumpBtn.classList.remove("hidden");
+  } else if (rect.top > window.innerHeight) {
+    bookmarkJumpBtn.textContent = "↓";
+    bookmarkJumpBtn.classList.remove("hidden");
+  } else {
+    bookmarkJumpBtn.classList.add("hidden");
+  }
+}
+
+let bookmarkScrollScheduled = false;
+window.addEventListener(
+  "scroll",
+  () => {
+    if (bookmarkScrollScheduled) return;
+    bookmarkScrollScheduled = true;
+    requestAnimationFrame(() => {
+      bookmarkScrollScheduled = false;
+      updateBookmarkButton();
+    });
+  },
+  { passive: true }
+);
+
+bookmarkJumpBtn.addEventListener("click", () => {
+  if (currentBookmarkLine === null) return;
+  const lineDiv = readerContent.querySelector(`.reader-line[data-line-index="${currentBookmarkLine}"]`);
+  if (lineDiv) lineDiv.scrollIntoView({ behavior: "smooth", block: "center" });
+});
 
 /* ---------- Settings: theme + reading font ---------- */
 
@@ -194,11 +271,44 @@ uploadForm.addEventListener("submit", async (e) => {
 
 /* ---------- View switching ---------- */
 
+function renderReaderContent(content) {
+  readerContent.innerHTML = "";
+  const lines = content.split("\n");
+  lines.forEach((line, i) => {
+    const lineDiv = document.createElement("div");
+    lineDiv.className = "reader-line";
+    lineDiv.dataset.lineIndex = i;
+
+    const dot = document.createElement("span");
+    dot.className = "bookmark-dot";
+    dot.title = "Bookmark this line";
+    dot.addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggleBookmark(i);
+    });
+    lineDiv.appendChild(dot);
+
+    const textSpan = document.createElement("span");
+    textSpan.className = "reader-line-text";
+    textSpan.textContent = line;
+    lineDiv.appendChild(textSpan);
+
+    readerContent.appendChild(lineDiv);
+
+    if (i < lines.length - 1) {
+      const sep = document.createElement("span");
+      sep.className = "line-sep";
+      sep.textContent = "\n";
+      readerContent.appendChild(sep);
+    }
+  });
+}
+
 async function openText(id) {
   const res = await fetch(`/api/texts/${id}`);
   currentText = await res.json();
   readerTitle.textContent = currentText.title;
-  readerContent.textContent = currentText.content;
+  renderReaderContent(currentText.content);
 
   // default target lang: first language != source_lang, preferring English
   const options = [...targetLangSelect.options].map((o) => o.value);
@@ -210,6 +320,8 @@ async function openText(id) {
   brand.style.display = "none";
   topbarReaderActions.style.display = "flex";
   hidePopup();
+
+  setBookmark(loadBookmark(currentText.id));
 }
 
 backBtn.addEventListener("click", () => {
@@ -217,6 +329,7 @@ backBtn.addEventListener("click", () => {
   libraryView.style.display = "block";
   topbarReaderActions.style.display = "none";
   brand.style.display = "block";
+  bookmarkJumpBtn.classList.add("hidden");
   loadLibrary();
 });
 
@@ -228,8 +341,22 @@ function hidePopup() {
   explainPanel.innerHTML = "";
 }
 
-const SENTENCE_BOUNDARY = /[.!?\n]/;
+const SENTENCE_BOUNDARY = /[.!?]/;
 const MAX_CONTEXT_CHARS = 500;
+
+// range.startOffset/endOffset are local to their text node, not global to
+// readerContent (which now contains many text nodes, one+ per line) — walk
+// the tree to translate a node-local offset into a global one.
+function globalTextOffset(node, localOffset) {
+  const walker = document.createTreeWalker(readerContent, NodeFilter.SHOW_TEXT);
+  let total = 0;
+  let current;
+  while ((current = walker.nextNode())) {
+    if (current === node) return total + localOffset;
+    total += current.textContent.length;
+  }
+  return total + localOffset;
+}
 
 function getSentenceContext(range) {
   const fullText = readerContent.textContent;
@@ -240,8 +367,8 @@ function getSentenceContext(range) {
     return range.toString();
   }
 
-  let start = range.startOffset;
-  let end = range.endOffset;
+  let start = globalTextOffset(startNode, range.startOffset);
+  let end = globalTextOffset(endNode, range.endOffset);
 
   let ctxStart = start;
   while (ctxStart > 0 && !SENTENCE_BOUNDARY.test(fullText[ctxStart - 1])) ctxStart--;

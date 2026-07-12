@@ -229,8 +229,69 @@ button, input, select {
   padding: 40px 40px 100px;
   font-family: var(--reader-font-family);
   font-size: var(--reader-font-size);
-  white-space: pre-wrap;
   user-select: text;
+}
+
+.reader-line {
+  position: relative;
+  min-height: 1.4em;
+}
+
+.reader-line-text {
+  white-space: pre-wrap;
+}
+
+.line-sep {
+  display: none;
+}
+
+.bookmark-dot {
+  position: absolute;
+  left: -30px;
+  top: 0.3em;
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+}
+
+.bookmark-dot::before {
+  content: "";
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.bookmark-dot:hover::before {
+  opacity: 0.65;
+}
+
+.bookmark-dot.active::before {
+  opacity: 1;
+}
+
+#bookmark-jump-btn {
+  position: fixed;
+  left: 24px;
+  bottom: 24px;
+  z-index: 500;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+  box-shadow: var(--shadow);
+}
+
+#bookmark-jump-btn.hidden {
+  display: none;
 }
 
 /* Dialogs */

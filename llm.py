@@ -8,7 +8,7 @@ from prompts import translate_messages, explain_messages, FIX_JSON_PROMPT
 
 client = OpenAI(base_url=CONFIG["base_url"], api_key=CONFIG["api_key"])
 
-RATE_LIMIT_MESSAGE = "Dzienny limit zapytań do API został wyczerpany. Spróbuj ponownie później."
+RATE_LIMIT_MESSAGE = "Daily API limit reached."
 
 
 class RateLimitExceeded(Exception):
