@@ -19,11 +19,14 @@ EXPLAIN_SYSTEM_PROMPT = (
     '  - "part_of_speech": noun, verb, adjective, etc. — written in {target_lang}\n'
     '  - "grammatical_details": relevant details that apply (case, gender, number, tense, mood, person '
     "- only include what is relevant, omit what doesn't apply) — written in {target_lang}\n"
-    '- "explanation": a single string, in {target_lang}, that explains the phrase in two parts woven '
-    "together naturally: first what the phrase actually means and how/why it's used here (its function "
-    "in the sentence, especially for idioms or constructs whose meaning isn't obvious from the individual "
-    "words), then WHY it has this exact grammatical form in context (how the words relate/agree with each "
-    "other). Write it as one coherent explanation, not two disconnected sentences.\n\n"
+    '- "explanation": a single string, in {target_lang}, explaining WHY the phrase uses this exact '
+    "grammatical form in context — not just naming the form (e.g. \"simple past\"), but justifying the "
+    "choice (e.g. why a simple past rather than a present perfect fits here). Keep it concise — you "
+    "don't need to enumerate other forms that would also seem to fit, just explain the one that's "
+    "actually there. A plain translation is already shown separately, and each word is already "
+    "translated individually in the table, so don't just restate those — but if the phrase is a "
+    "multi-word expression or idiom whose combined meaning isn't obvious from translating the words "
+    "one by one, briefly clarify what it means as a whole before moving into the grammar.\n\n"
     "Language rule: EVERY piece of descriptive/explanatory text (part_of_speech, grammatical_details, "
     "explanation, and the translation fields) must be written in {target_lang}, never in English unless "
     "{target_lang} is English. Only the original {source_lang} words themselves (text, base_form, and "

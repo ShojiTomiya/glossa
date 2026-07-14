@@ -138,6 +138,12 @@ button, input, select {
 
 .btn-icon:hover { background: var(--border-soft); }
 
+.btn-danger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: var(--accent-text);
+}
+
 .btn-sm {
   padding: 5px 10px;
   font-size: 0.85rem;

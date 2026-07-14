@@ -32,6 +32,12 @@ const editTitleInput = document.getElementById("edit-title-input");
 const editSourceLangInput = document.getElementById("edit-source-lang-input");
 let editingTextId = null;
 
+const deleteDialog = document.getElementById("delete-dialog");
+const deleteDialogMessage = document.getElementById("delete-dialog-message");
+const deleteCancelBtn = document.getElementById("delete-cancel-btn");
+const deleteConfirmBtn = document.getElementById("delete-confirm-btn");
+let deletingTextId = null;
+
 const settingsDialog = document.getElementById("settings-dialog");
 const settingsBtn = document.getElementById("settings-btn");
 const settingsCloseBtn = document.getElementById("settings-close-btn");
@@ -203,10 +209,11 @@ function renderLibrary() {
     const del = document.createElement("button");
     del.textContent = "Delete";
     del.className = "delete-btn";
-    del.addEventListener("click", async (e) => {
+    del.addEventListener("click", (e) => {
       e.stopPropagation();
-      await fetch(`/api/texts/${t.id}`, { method: "DELETE" });
-      loadLibrary();
+      deletingTextId = t.id;
+      deleteDialogMessage.textContent = `Delete "${t.title}"? This can't be undone.`;
+      deleteDialog.showModal();
     });
 
     actions.appendChild(edit);
@@ -239,6 +246,16 @@ editForm.addEventListener("submit", async (e) => {
     return;
   }
   editDialog.close();
+  loadLibrary();
+});
+
+/* ---------- Delete dialog ---------- */
+
+deleteCancelBtn.addEventListener("click", () => deleteDialog.close());
+
+deleteConfirmBtn.addEventListener("click", async () => {
+  await fetch(`/api/texts/${deletingTextId}`, { method: "DELETE" });
+  deleteDialog.close();
   loadLibrary();
 });
 
