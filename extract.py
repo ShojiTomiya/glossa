@@ -1,14 +1,12 @@
 import fitz
 import ebooklib
+import trafilatura
 from ebooklib import epub
 from bs4 import BeautifulSoup
 
 
 def _page_text(page: fitz.Page) -> str:
-    # "blocks" groups text the way it's laid out on the page (paragraphs,
-    # captions, etc.) with each block's own text still broken into raw print
-    # lines — join those with spaces so a paragraph isn't split mid-sentence,
-    # then join blocks (paragraphs) with newlines.
+
     paragraphs = [
         " ".join(text.split("\n")).strip()
         for *_, text, _, block_type in page.get_text("blocks")
@@ -34,10 +32,6 @@ def _block_text(soup: BeautifulSoup) -> str:
     for br in soup.find_all("br"):
         br.replace_with("\n")
 
-    # Only the innermost block elements, so a wrapping <div> around several
-    # <p>s doesn't duplicate their text. Using no separator (rather than "\n")
-    # keeps text around inline tags (<i>, <a>, footnote refs...) glued
-    # together correctly instead of splitting mid-sentence.
     blocks = [el.get_text().strip() for el in soup.find_all(BLOCK_TAGS) if not el.find(BLOCK_TAGS)]
     blocks = [b for b in blocks if b]
     return "\n".join(blocks) if blocks else soup.get_text().strip()
@@ -55,3 +49,18 @@ def extract_epub_text(path: str) -> str:
     if not chapters:
         raise ValueError("EPUB has no extractable text content.")
     return "\n\n".join(chapters)
+
+
+def extract_url_text(url: str) -> tuple[str, str | None]:
+ 
+    downloaded = trafilatura.fetch_url(url)
+    if not downloaded:
+        raise ValueError("Could not fetch that URL. Check the address or try again.")
+
+    content = trafilatura.extract(downloaded, favor_precision=True)
+    if not content or not content.strip():
+        raise ValueError("Could not find readable article content at that URL.")
+
+    metadata = trafilatura.extract_metadata(downloaded)
+    title = metadata.title if metadata else None
+    return content.strip(), title

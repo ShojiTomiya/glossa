@@ -103,11 +103,21 @@ button, input, select {
   margin-bottom: 14px;
 }
 
+.field-block.hidden {
+  display: none;
+}
+
 .field-radio {
   display: flex;
   align-items: center;
   gap: 6px;
   margin-bottom: 6px;
+}
+
+.upload-mode-toggle {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
 }
 
 /* Buttons */
@@ -335,6 +345,7 @@ dialog legend {
 
 dialog input[type="file"],
 dialog input[type="text"],
+dialog input[type="url"],
 dialog select {
   border: 1px solid var(--border);
   background: var(--bg);

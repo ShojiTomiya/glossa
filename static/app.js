@@ -264,24 +264,64 @@ deleteConfirmBtn.addEventListener("click", async () => {
 uploadOpenBtn.addEventListener("click", () => uploadDialog.showModal());
 uploadCancelBtn.addEventListener("click", () => uploadDialog.close());
 
+const uploadModeFileBtn = document.getElementById("upload-mode-file-btn");
+const uploadModeUrlBtn = document.getElementById("upload-mode-url-btn");
+const fileField = document.getElementById("file-field");
+const urlField = document.getElementById("url-field");
+const fileInput = document.getElementById("file-input");
+const urlInput = document.getElementById("url-input");
+const titleInput = document.getElementById("title-input");
+
+let uploadMode = "file";
+
+function setUploadMode(mode) {
+  uploadMode = mode;
+  const isFile = mode === "file";
+
+  fileField.classList.toggle("hidden", !isFile);
+  urlField.classList.toggle("hidden", isFile);
+  uploadModeFileBtn.classList.toggle("btn-primary", isFile);
+  uploadModeUrlBtn.classList.toggle("btn-primary", !isFile);
+  uploadModeFileBtn.setAttribute("aria-pressed", String(isFile));
+  uploadModeUrlBtn.setAttribute("aria-pressed", String(!isFile));
+
+  fileInput.required = isFile;
+  urlInput.required = !isFile;
+  // Title is auto-filled from the page when importing a link, so don't force it.
+  titleInput.required = isFile;
+}
+
+uploadModeFileBtn.addEventListener("click", () => setUploadMode("file"));
+uploadModeUrlBtn.addEventListener("click", () => setUploadMode("url"));
+
 uploadForm.addEventListener("submit", async (e) => {
   e.preventDefault();
-  const file = document.getElementById("file-input").files[0];
-  const title = document.getElementById("title-input").value;
+  const title = titleInput.value;
   const sourceLang = document.getElementById("source-lang-input").value;
 
-  const formData = new FormData();
-  formData.append("file", file);
-  formData.append("title", title);
-  formData.append("source_lang", sourceLang);
+  let res;
+  if (uploadMode === "file") {
+    const file = fileInput.files[0];
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("title", title);
+    formData.append("source_lang", sourceLang);
+    res = await fetch("/api/upload", { method: "POST", body: formData });
+  } else {
+    res = await fetch("/api/import-url", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: urlInput.value, title: title || null, source_lang: sourceLang }),
+    });
+  }
 
-  const res = await fetch("/api/upload", { method: "POST", body: formData });
   if (!res.ok) {
     const err = await res.json();
-    alert(err.detail || "Upload failed");
+    alert(err.detail || "Import failed");
     return;
   }
   uploadForm.reset();
+  setUploadMode("file");
   uploadDialog.close();
   loadLibrary();
 });

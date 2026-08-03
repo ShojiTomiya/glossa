@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 import storage
 import llm
-from extract import extract_pdf_text, extract_epub_text
+from extract import extract_pdf_text, extract_epub_text, extract_url_text
 
 app = FastAPI()
 
@@ -29,6 +29,12 @@ class ExplainRequest(BaseModel):
 class UpdateTextRequest(BaseModel):
     title: str
     source_lang: str
+
+
+class ImportUrlRequest(BaseModel):
+    url: str
+    source_lang: str
+    title: str | None = None
 
 
 @app.post("/api/upload")
@@ -58,6 +64,19 @@ async def upload(file: UploadFile, title: str = Form(...), source_lang: str = Fo
         raise HTTPException(400, f"Unsupported file type '{suffix}'. Use .pdf, .epub or .txt.")
 
     entry = storage.save_text(title, source_lang, content)
+    return entry
+
+
+@app.post("/api/import-url")
+def import_url(req: ImportUrlRequest):
+    try:
+        content, extracted_title = extract_url_text(req.url)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+    title = req.title or extracted_title or req.url
+    body = f"{extracted_title}\n\n{content}" if extracted_title else content
+    entry = storage.save_text(title, req.source_lang, body)
     return entry
 
 
