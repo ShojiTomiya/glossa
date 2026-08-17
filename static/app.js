@@ -469,6 +469,7 @@ readerContent.addEventListener("mouseup", async () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         phrase,
+        context,
         source_lang: currentText.source_lang,
         target_lang: targetLangSelect.value,
       }),
@@ -515,6 +516,13 @@ explainBtn.addEventListener("click", async () => {
 function renderExplain(data) {
   explainPanel.innerHTML = "";
 
+  if (data.explanation) {
+    const explanation = document.createElement("p");
+    explanation.className = "explain-text";
+    explanation.textContent = data.explanation;
+    explainPanel.appendChild(explanation);
+  }
+
   if (Array.isArray(data.words) && data.words.length) {
     const table = document.createElement("table");
     table.className = "words-table";
@@ -550,13 +558,6 @@ function renderExplain(data) {
       table.appendChild(row);
     }
     explainPanel.appendChild(table);
-  }
-
-  if (data.explanation) {
-    const explanation = document.createElement("p");
-    explanation.className = "explain-text";
-    explanation.textContent = data.explanation;
-    explainPanel.appendChild(explanation);
   }
 }
 

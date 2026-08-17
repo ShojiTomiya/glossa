@@ -1,5 +1,8 @@
 TRANSLATE_SYSTEM_PROMPT = (
-    "You are a translator. Translate the given phrase from {source_lang} to {target_lang}. "
+    "You are a translator. You will be given a phrase together with the surrounding context it "
+    "appears in. Translate ONLY the phrase from {source_lang} to {target_lang}, choosing the "
+    "meaning/sense that fits the given context — not necessarily the most common meaning of the "
+    "word or phrase in isolation. "
     "Respond with only the translation, no comments, no quotes, no explanation."
 )
 
@@ -43,11 +46,12 @@ FIX_JSON_PROMPT = (
 )
 
 
-def translate_messages(phrase: str, source_lang: str, target_lang: str) -> list:
+def translate_messages(phrase: str, context: str, source_lang: str, target_lang: str) -> list:
     system = TRANSLATE_SYSTEM_PROMPT.format(source_lang=source_lang, target_lang=target_lang)
+    user = f"Context: {context}\n\nPhrase to translate: {phrase}"
     return [
         {"role": "system", "content": system},
-        {"role": "user", "content": phrase},
+        {"role": "user", "content": user},
     ]
 
 

@@ -15,6 +15,7 @@ app = FastAPI()
 
 class TranslateRequest(BaseModel):
     phrase: str
+    context: str
     source_lang: str
     target_lang: str
 
@@ -111,7 +112,7 @@ def delete_text(text_id: str):
 @app.post("/api/translate")
 def translate(req: TranslateRequest):
     try:
-        translation = llm.translate(req.phrase, req.source_lang, req.target_lang)
+        translation = llm.translate(req.phrase, req.context, req.source_lang, req.target_lang)
     except llm.RateLimitExceeded as e:
         raise HTTPException(429, str(e))
     return {"translation": translation}

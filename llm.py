@@ -32,9 +32,11 @@ def _parse_json(text: str) -> tuple[dict | None, str | None]:
         except json.JSONDecodeError as e:
             return None, str(e)
 
+MAX_CONTEXT_CHARS = 800
 
-def translate(phrase: str, source_lang: str, target_lang: str) -> str:
-    messages = translate_messages(phrase, _lang_name(source_lang), _lang_name(target_lang))
+def translate(phrase: str, context: str, source_lang: str, target_lang: str) -> str:
+    context = context[:MAX_CONTEXT_CHARS]
+    messages = translate_messages(phrase, context, _lang_name(source_lang), _lang_name(target_lang))
     try:
         response = client.chat.completions.create(
             model=CONFIG["model"],
@@ -46,9 +48,6 @@ def translate(phrase: str, source_lang: str, target_lang: str) -> str:
     except RateLimitError:
         raise RateLimitExceeded(RATE_LIMIT_MESSAGE)
     return response.choices[0].message.content.strip()
-
-
-MAX_CONTEXT_CHARS = 800
 
 
 def _call_explain(messages: list) -> str:
