@@ -8,7 +8,8 @@ from pydantic import BaseModel
 
 import storage
 import llm
-from extract import extract_pdf_text, extract_epub_text, extract_url_text
+import pdf_render
+from extract import extract_epub_text, extract_url_text
 
 app = FastAPI()
 
@@ -44,13 +45,16 @@ async def upload(file: UploadFile, title: str = Form(...), source_lang: str = Fo
     raw = await file.read()
 
     if suffix == ".pdf":
+        # Pages are kept as their own layout (see pdf_render.py) and
+        # rendered on demand, so we just store the file — no upload-time
+        # extraction — beyond a quick check that there's text to find at all.
         with tempfile.NamedTemporaryFile(suffix=".pdf") as tmp:
             tmp.write(raw)
             tmp.flush()
-            try:
-                content = extract_pdf_text(tmp.name)
-            except ValueError as e:
-                raise HTTPException(400, str(e))
+            if not pdf_render.has_extractable_text(tmp.name):
+                raise HTTPException(400, "PDF appears to be a scan with no extractable text (OCR not supported).")
+        entry = storage.save_pdf(title, source_lang, raw)
+        return entry
     elif suffix == ".epub":
         with tempfile.NamedTemporaryFile(suffix=".epub") as tmp:
             tmp.write(raw)
@@ -92,6 +96,17 @@ def get_text(text_id: str):
     if entry is None:
         raise HTTPException(404, "Text not found")
     return entry
+
+
+@app.get("/api/texts/{text_id}/pdf-page/{page_num}")
+def get_pdf_page(text_id: str, page_num: int):
+    path = storage.get_pdf_path(text_id)
+    if path is None:
+        raise HTTPException(404, "PDF not found")
+    try:
+        return pdf_render.render_page(str(path), page_num)
+    except ValueError as e:
+        raise HTTPException(404, str(e))
 
 
 @app.patch("/api/texts/{text_id}")

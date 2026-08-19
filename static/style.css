@@ -81,6 +81,16 @@ button, input, select {
   flex: 1;
 }
 
+#pdf-page-indicator {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.9rem;
+}
+
+#pdf-page-indicator.hidden {
+  display: none;
+}
+
 #settings-btn {
   margin-left: auto;
   font-size: 1.3rem;
@@ -248,6 +258,10 @@ button, input, select {
   user-select: text;
 }
 
+#reader-content.hidden {
+  display: none;
+}
+
 .reader-line {
   position: relative;
   min-height: 1.4em;
@@ -308,6 +322,99 @@ button, input, select {
 
 #bookmark-jump-btn.hidden {
   display: none;
+}
+
+/* PDF reader */
+
+#pdf-reader {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+#pdf-reader.hidden {
+  display: none;
+}
+
+#pdf-page {
+  max-width: 70ch;
+  width: 100%;
+  margin: 0 auto;
+  padding: 40px 40px 100px;
+  font-family: var(--reader-font-family);
+  font-size: var(--reader-font-size);
+  line-height: 1.6;
+  user-select: text;
+}
+
+.pblock {
+  margin: 0 0 1em;
+}
+
+.pblock.muted {
+  color: var(--text-muted);
+}
+
+.pblock.bold {
+  font-weight: 600;
+}
+
+.prow {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2em;
+}
+
+.prow-row {
+  display: flex;
+}
+
+.prow-row-multi {
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.pdf-nav-btn {
+  position: fixed;
+  bottom: 24px;
+  z-index: 500;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow);
+  cursor: pointer;
+}
+
+.pdf-nav-btn:hover {
+  border-color: var(--accent);
+}
+
+.pdf-nav-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.pdf-nav-btn:disabled:hover {
+  border-color: var(--border);
+}
+
+.pdf-nav-btn.hidden {
+  display: none;
+}
+
+.pdf-nav-btn-left {
+  left: 24px;
+}
+
+.pdf-nav-btn-right {
+  right: 24px;
 }
 
 /* Dialogs */

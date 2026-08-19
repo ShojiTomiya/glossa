@@ -1,29 +1,10 @@
-import fitz
 import ebooklib
 import trafilatura
 from ebooklib import epub
 from bs4 import BeautifulSoup
 
-
-def _page_text(page: fitz.Page) -> str:
-
-    paragraphs = [
-        " ".join(text.split("\n")).strip()
-        for *_, text, _, block_type in page.get_text("blocks")
-        if block_type == 0
-    ]
-    paragraphs = [p for p in paragraphs if p]
-    return "\n".join(paragraphs) if paragraphs else page.get_text().strip()
-
-
-def extract_pdf_text(path: str) -> str:
-    doc = fitz.open(path)
-    pages = [_page_text(page) for page in doc]
-    pages = [p for p in pages if p.strip()]
-    if not pages:
-        raise ValueError("PDF appears to be a scan with no extractable text (OCR not supported).")
-    return "\n\n".join(pages)
-
+# PDFs are handled by pdf_render.py, which keeps each page's layout instead
+# of flattening it to plain text - see that module instead of here.
 
 BLOCK_TAGS = ["p", "div", "li", "h1", "h2", "h3", "h4", "h5", "h6", "blockquote", "pre", "td"]
 

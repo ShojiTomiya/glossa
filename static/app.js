@@ -15,6 +15,11 @@ const readerContent = document.getElementById("reader-content");
 const targetLangSelect = document.getElementById("target-lang-select");
 const backBtn = document.getElementById("back-btn");
 const bookmarkJumpBtn = document.getElementById("bookmark-jump-btn");
+const pdfReader = document.getElementById("pdf-reader");
+const pdfPage = document.getElementById("pdf-page");
+const pdfPrevBtn = document.getElementById("pdf-prev-btn");
+const pdfNextBtn = document.getElementById("pdf-next-btn");
+const pdfPageIndicator = document.getElementById("pdf-page-indicator");
 const popup = document.getElementById("popup");
 const popupTranslation = document.getElementById("popup-translation");
 const explainBtn = document.getElementById("explain-btn");
@@ -45,10 +50,14 @@ const fontFamilySelect = document.getElementById("font-family-select");
 const fontSizeSelect = document.getElementById("font-size-select");
 const fontSettingsFieldset = document.getElementById("font-settings-fieldset");
 
-let currentText = null; // {id, title, source_lang, content}
+let currentText = null; // {id, title, source_lang, content} or {..., kind: "pdf"}
 let currentSelection = null; // {phrase, context}
 let currentBookmarkLine = null;
 let allTexts = [];
+
+// PDF reader state
+let pdfPageNum = 1;
+let pdfTotalPages = 1;
 
 /* ---------- Bookmarks ---------- */
 
@@ -365,7 +374,6 @@ async function openText(id) {
   const res = await fetch(`/api/texts/${id}`);
   currentText = await res.json();
   readerTitle.textContent = currentText.title;
-  renderReaderContent(currentText.content);
 
   // default target lang: first language != source_lang, preferring English
   const options = [...targetLangSelect.options].map((o) => o.value);
@@ -378,7 +386,23 @@ async function openText(id) {
   topbarReaderActions.style.display = "flex";
   hidePopup();
 
-  setBookmark(loadBookmark(currentText.id));
+  if (currentText.kind === "pdf") {
+    readerContent.classList.add("hidden");
+    pdfReader.classList.remove("hidden");
+    bookmarkJumpBtn.classList.add("hidden");
+    pdfPrevBtn.classList.remove("hidden");
+    pdfNextBtn.classList.remove("hidden");
+    pdfPageIndicator.classList.remove("hidden");
+    await loadPdfPage(currentText.id, loadPdfPageNum(currentText.id));
+  } else {
+    pdfReader.classList.add("hidden");
+    pdfPrevBtn.classList.add("hidden");
+    pdfNextBtn.classList.add("hidden");
+    pdfPageIndicator.classList.add("hidden");
+    readerContent.classList.remove("hidden");
+    renderReaderContent(currentText.content);
+    setBookmark(loadBookmark(currentText.id));
+  }
 }
 
 backBtn.addEventListener("click", () => {
@@ -387,6 +411,9 @@ backBtn.addEventListener("click", () => {
   topbarReaderActions.style.display = "none";
   brand.style.display = "block";
   bookmarkJumpBtn.classList.add("hidden");
+  pdfPrevBtn.classList.add("hidden");
+  pdfNextBtn.classList.add("hidden");
+  pdfPageIndicator.classList.add("hidden");
   loadLibrary();
 });
 
@@ -401,32 +428,12 @@ function hidePopup() {
 const SENTENCE_BOUNDARY = /[.!?]/;
 const MAX_CONTEXT_CHARS = 500;
 
-// range.startOffset/endOffset are local to their text node, not global to
-// readerContent (which now contains many text nodes, one+ per line) — walk
-// the tree to translate a node-local offset into a global one.
-function globalTextOffset(node, localOffset) {
-  const walker = document.createTreeWalker(readerContent, NodeFilter.SHOW_TEXT);
-  let total = 0;
-  let current;
-  while ((current = walker.nextNode())) {
-    if (current === node) return total + localOffset;
-    total += current.textContent.length;
-  }
-  return total + localOffset;
-}
-
-function getSentenceContext(range) {
-  const fullText = readerContent.textContent;
-  const startNode = range.startContainer;
-  const endNode = range.endContainer;
-
-  if (startNode.nodeType !== Node.TEXT_NODE || endNode.nodeType !== Node.TEXT_NODE) {
-    return range.toString();
-  }
-
-  let start = globalTextOffset(startNode, range.startOffset);
-  let end = globalTextOffset(endNode, range.endOffset);
-
+// Given the full text of whatever's being read and a start/end character
+// range within it, grow outward to the sentence boundaries around it (or
+// fall back to a fixed window if that sentence is too long). Shared between
+// the continuous text reader and the PDF reader, which each build `fullText`
+// and the start/end offsets differently but hand off to this the same way.
+function extractSentenceContext(fullText, start, end) {
   let ctxStart = start;
   while (ctxStart > 0 && !SENTENCE_BOUNDARY.test(fullText[ctxStart - 1])) ctxStart--;
   let ctxEnd = end;
@@ -440,20 +447,40 @@ function getSentenceContext(range) {
     context = fullText.slice(Math.max(0, mid - 150), mid + 150).trim();
   }
 
-  return context || range.toString();
+  return context;
 }
 
-readerContent.addEventListener("mouseup", async () => {
-  const selection = window.getSelection();
-  const phrase = selection.toString().trim();
-  if (!phrase || selection.rangeCount === 0) {
-    return;
+// range.startOffset/endOffset are local to their text node, not global to
+// `root` (which contains many text nodes) — walk the tree to translate a
+// node-local offset into an offset global to `root`.
+function globalTextOffset(root, node, localOffset) {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let total = 0;
+  let current;
+  while ((current = walker.nextNode())) {
+    if (current === node) return total + localOffset;
+    total += current.textContent.length;
+  }
+  return total + localOffset;
+}
+
+function getSentenceContext(range) {
+  const startNode = range.startContainer;
+  const endNode = range.endContainer;
+
+  if (startNode.nodeType !== Node.TEXT_NODE || endNode.nodeType !== Node.TEXT_NODE) {
+    return range.toString();
   }
 
-  const range = selection.getRangeAt(0);
-  const rect = range.getBoundingClientRect();
-  const context = getSentenceContext(range);
+  const start = globalTextOffset(readerContent, startNode, range.startOffset);
+  const end = globalTextOffset(readerContent, endNode, range.endOffset);
 
+  return extractSentenceContext(readerContent.textContent, start, end) || range.toString();
+}
+
+// Shared by the text reader and the PDF reader: shows the popup at the
+// current selection and fetches its translation.
+async function handleTextSelection(phrase, context, rect) {
   currentSelection = { phrase, context };
 
   popup.style.left = `${window.scrollX + rect.left}px`;
@@ -483,6 +510,131 @@ readerContent.addEventListener("mouseup", async () => {
   } catch (e) {
     popupTranslation.textContent = "Translation error";
   }
+}
+
+readerContent.addEventListener("mouseup", () => {
+  const selection = window.getSelection();
+  const phrase = selection.toString().trim();
+  if (!phrase || selection.rangeCount === 0) {
+    return;
+  }
+  const range = selection.getRangeAt(0);
+  handleTextSelection(phrase, getSentenceContext(range), range.getBoundingClientRect());
+});
+
+/* ---------- PDF reader ---------- */
+
+function pdfPageKey(textId) {
+  return `lexplain-pdf-page-${textId}`;
+}
+
+function loadPdfPageNum(textId) {
+  const v = localStorage.getItem(pdfPageKey(textId));
+  return v === null ? 1 : parseInt(v, 10);
+}
+
+function appendRuns(container, runs, joinWithSpace) {
+  runs.forEach((run, i) => {
+    if (joinWithSpace && i > 0) container.appendChild(document.createTextNode(" "));
+    if (run.italic) {
+      const em = document.createElement("i");
+      em.textContent = run.text;
+      container.appendChild(em);
+    } else {
+      container.appendChild(document.createTextNode(run.text));
+    }
+  });
+}
+
+function renderPdfBlock(block) {
+  const isRows = block.kind === "rows";
+  const el = document.createElement(isRows ? "div" : "p");
+  el.className = "pblock" + (block.muted ? " muted" : "") + (block.bold ? " bold" : "");
+  el.dataset.blockId = block.id;
+  el.style.fontSize = `${block.rel_size}em`;
+
+  if (isRows) {
+    el.classList.add("prow");
+    for (const row of block.rows) {
+      const rowEl = document.createElement("div");
+      rowEl.className = row.cells.length > 1 ? "prow-row prow-row-multi" : "prow-row";
+      for (const cell of row.cells) {
+        const cellEl = document.createElement("span");
+        cellEl.className = "prow-cell";
+        appendRuns(cellEl, cell, true);
+        rowEl.appendChild(cellEl);
+      }
+      el.appendChild(rowEl);
+    }
+  } else {
+    el.style.textAlign = block.align;
+    // Join every run across every row/cell into one flowing paragraph,
+    // ignoring the PDF's own line breaks — those were computed for its
+    // original width/font, not ours.
+    const runs = block.rows.flatMap((row) => row.cells.flatMap((cell) => cell));
+    appendRuns(el, runs, true);
+  }
+
+  return el;
+}
+
+async function loadPdfPage(textId, num) {
+  const res = await fetch(`/api/texts/${textId}/pdf-page/${num}`);
+  if (!res.ok) {
+    pdfPage.innerHTML = "";
+    pdfPageIndicator.textContent = "";
+    return;
+  }
+  const data = await res.json();
+
+  pdfPageNum = data.page;
+  pdfTotalPages = data.total_pages;
+  pdfPage.innerHTML = "";
+  for (const block of data.blocks) {
+    pdfPage.appendChild(renderPdfBlock(block));
+  }
+
+  pdfPageIndicator.textContent = `${pdfPageNum} / ${pdfTotalPages}`;
+  pdfPrevBtn.disabled = pdfPageNum <= 1;
+  pdfNextBtn.disabled = pdfPageNum >= pdfTotalPages;
+  localStorage.setItem(pdfPageKey(textId), String(pdfPageNum));
+  hidePopup();
+  window.scrollTo(0, 0);
+}
+
+pdfPrevBtn.addEventListener("click", () => {
+  if (pdfPageNum > 1) loadPdfPage(currentText.id, pdfPageNum - 1);
+});
+pdfNextBtn.addEventListener("click", () => {
+  if (pdfPageNum < pdfTotalPages) loadPdfPage(currentText.id, pdfPageNum + 1);
+});
+
+// Mirrors getSentenceContext, but scoped to the single block the selection
+// started in (a real PDF paragraph/heading/footnote) instead of the whole
+// page — context never bleeds across blocks, and there's no huge document
+// tree to walk.
+function getPdfContext(range) {
+  const startNode = range.startContainer;
+  const endNode = range.endContainer;
+  if (startNode.nodeType !== Node.TEXT_NODE || endNode.nodeType !== Node.TEXT_NODE) {
+    return range.toString();
+  }
+
+  const block = startNode.parentElement.closest(".pblock");
+  if (!block) return range.toString();
+
+  const start = globalTextOffset(block, startNode, range.startOffset);
+  const end = globalTextOffset(block, endNode, range.endOffset);
+
+  return extractSentenceContext(block.textContent, start, end) || range.toString();
+}
+
+pdfPage.addEventListener("mouseup", () => {
+  const selection = window.getSelection();
+  const phrase = selection.toString().trim();
+  if (!phrase || selection.rangeCount === 0) return;
+  const range = selection.getRangeAt(0);
+  handleTextSelection(phrase, getPdfContext(range), range.getBoundingClientRect());
 });
 
 explainBtn.addEventListener("click", async () => {
@@ -562,7 +714,8 @@ function renderExplain(data) {
 }
 
 document.addEventListener("mousedown", (e) => {
-  if (!popup.contains(e.target) && e.target !== readerContent && !readerContent.contains(e.target)) {
+  const inSelectableArea = readerContent.contains(e.target) || pdfPage.contains(e.target);
+  if (!popup.contains(e.target) && !inSelectableArea) {
     hidePopup();
   }
 });
