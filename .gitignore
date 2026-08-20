@@ -3,5 +3,5 @@ __pycache__/
 *.pyc
 texts/*.txt
 texts/*.pdf
-texts/index.json
+texts/*.json
 .DS_Store

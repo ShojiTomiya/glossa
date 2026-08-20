@@ -1,13 +1,3 @@
-"""Turns a PDF page into a JSON-friendly list of text blocks for the reader.
-
-Unlike extract.py (which flattens a document into plain text), this keeps
-each page's blocks as PyMuPDF found them — paragraphs, headers, footers,
-footnotes — and carries over just enough of their own formatting (relative
-font size, bold/italic, muted color, left/center/right position) for the
-frontend to render them distinguishably, without deciding what any of them
-*mean*. Nothing is filtered out or reordered.
-"""
-
 import fitz
 
 FLAG_ITALIC = 2
@@ -25,14 +15,7 @@ def has_extractable_text(path: str) -> bool:
 
 
 def _lines_same_row(a: dict, b: dict) -> bool:
-    """True only if the lines' vertical centers are close together — not
-    merely if their boxes touch. Two genuinely side-by-side lines (e.g. a
-    title on the left, an author on the right) share almost the same
-    baseline. Ordinary consecutive lines in a paragraph often have boxes
-    that touch or slightly overlap too (descenders like g/y/p dipping into
-    the next line's box at tight leading), but their *centers* are a full
-    line-height apart — comparing centers instead of raw overlap avoids
-    misreading normal stacked text as side-by-side columns."""
+
     ay0, ay1 = a["bbox"][1], a["bbox"][3]
     by0, by1 = b["bbox"][1], b["bbox"][3]
     a_center, b_center = (ay0 + ay1) / 2, (by0 + by1) / 2
@@ -41,9 +24,7 @@ def _lines_same_row(a: dict, b: dict) -> bool:
 
 
 def _group_rows(lines: list) -> list[list]:
-    """Lines that physically sit side by side become one row; ordinary
-    stacked paragraph lines each get their own row of size 1. Pure
-    geometry, no guessing what the text means."""
+
     rows: list[list] = []
     for line in sorted(lines, key=lambda l: l["bbox"][1]):
         for row in rows:
@@ -69,14 +50,7 @@ _body_size_cache: dict[str, float] = {}
 
 
 def _document_body_size(path: str) -> float:
-    """The font size used for ordinary paragraph text, voted for by
-    character count across the *whole document* — not just the current
-    page. A single page's vote can be misleading (e.g. a page holding one
-    short sentence plus a very long footnote: the footnote has more total
-    characters and would "win", making the actual body text look enlarged
-    and the footnote look normal-sized). Cached per file since it requires
-    scanning every page once.
-    """
+
     if path in _body_size_cache:
         return _body_size_cache[path]
 

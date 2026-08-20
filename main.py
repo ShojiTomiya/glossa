@@ -9,7 +9,7 @@ from pydantic import BaseModel
 import storage
 import llm
 import pdf_render
-from extract import extract_epub_text, extract_url_text
+from extract import extract_epub_blocks, extract_url_blocks
 
 app = FastAPI()
 
@@ -60,9 +60,11 @@ async def upload(file: UploadFile, title: str = Form(...), source_lang: str = Fo
             tmp.write(raw)
             tmp.flush()
             try:
-                content = extract_epub_text(tmp.name)
+                blocks = extract_epub_blocks(tmp.name)
             except ValueError as e:
                 raise HTTPException(400, str(e))
+        entry = storage.save_blocks(title, source_lang, blocks)
+        return entry
     elif suffix == ".txt":
         content = raw.decode("utf-8", errors="replace")
     else:
@@ -75,13 +77,15 @@ async def upload(file: UploadFile, title: str = Form(...), source_lang: str = Fo
 @app.post("/api/import-url")
 def import_url(req: ImportUrlRequest):
     try:
-        content, extracted_title = extract_url_text(req.url)
+        blocks, extracted_title = extract_url_blocks(req.url)
     except ValueError as e:
         raise HTTPException(400, str(e))
 
     title = req.title or extracted_title or req.url
-    body = f"{extracted_title}\n\n{content}" if extracted_title else content
-    entry = storage.save_text(title, req.source_lang, body)
+    if extracted_title:
+        heading = {"kind": "heading", "level": 1, "runs": [{"text": extracted_title, "italic": False, "bold": False}]}
+        blocks = [heading] + blocks
+    entry = storage.save_blocks(title, req.source_lang, blocks, kind="url")
     return entry
 
 

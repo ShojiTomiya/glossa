@@ -370,6 +370,48 @@ function renderReaderContent(content) {
   });
 }
 
+// Same DOM shape as renderReaderContent (so bookmarks/selection/context work
+// identically) but built from EPUB blocks — {kind, level?, runs} — instead
+// of splitting a flat string, so headings and inline italic/bold survive.
+function renderReaderBlocks(blocks) {
+  readerContent.innerHTML = "";
+  blocks.forEach((block, i) => {
+    const lineDiv = document.createElement("div");
+    lineDiv.className = "reader-line";
+    lineDiv.dataset.lineIndex = i;
+    if (block.kind === "heading") {
+      lineDiv.classList.add(`heading-h${block.level}`);
+    } else if (block.kind === "list-item") {
+      lineDiv.classList.add("list-item");
+    } else if (block.kind === "table-row") {
+      lineDiv.classList.add("table-row");
+    }
+
+    const dot = document.createElement("span");
+    dot.className = "bookmark-dot";
+    dot.title = "Bookmark this line";
+    dot.addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggleBookmark(i);
+    });
+    lineDiv.appendChild(dot);
+
+    const textSpan = document.createElement("span");
+    textSpan.className = "reader-line-text reader-block-text";
+    appendRuns(textSpan, block.runs, false);
+    lineDiv.appendChild(textSpan);
+
+    readerContent.appendChild(lineDiv);
+
+    if (i < blocks.length - 1) {
+      const sep = document.createElement("span");
+      sep.className = "line-sep";
+      sep.textContent = "\n";
+      readerContent.appendChild(sep);
+    }
+  });
+}
+
 async function openText(id) {
   const res = await fetch(`/api/texts/${id}`);
   currentText = await res.json();
@@ -400,7 +442,11 @@ async function openText(id) {
     pdfNextBtn.classList.add("hidden");
     pdfPageIndicator.classList.add("hidden");
     readerContent.classList.remove("hidden");
-    renderReaderContent(currentText.content);
+    if (currentText.kind === "epub" || currentText.kind === "url") {
+      renderReaderBlocks(currentText.blocks);
+    } else {
+      renderReaderContent(currentText.content);
+    }
     setBookmark(loadBookmark(currentText.id));
   }
 }
@@ -448,6 +494,14 @@ function extractSentenceContext(fullText, start, end) {
   }
 
   return context;
+}
+
+// True if the sentence starting at `end` never hits a `.`/`!`/`?` before
+// running off the end of `fullText` — i.e. it looks cut off, not finished.
+function sentenceRunsOffEnd(fullText, end) {
+  let i = end;
+  while (i < fullText.length && !SENTENCE_BOUNDARY.test(fullText[i])) i++;
+  return i >= fullText.length;
 }
 
 // range.startOffset/endOffset are local to their text node, not global to
@@ -533,16 +587,29 @@ function loadPdfPageNum(textId) {
   return v === null ? 1 : parseInt(v, 10);
 }
 
+// Appends styled text runs ({text, italic, bold}) to `container`. A literal
+// "\n" within a run's text (from an EPUB <br>) becomes a real <br> element,
+// not just a character — used by both the PDF and EPUB renderers.
 function appendRuns(container, runs, joinWithSpace) {
   runs.forEach((run, i) => {
     if (joinWithSpace && i > 0) container.appendChild(document.createTextNode(" "));
+
+    let target = container;
+    if (run.bold) {
+      const b = document.createElement("b");
+      target.appendChild(b);
+      target = b;
+    }
     if (run.italic) {
       const em = document.createElement("i");
-      em.textContent = run.text;
-      container.appendChild(em);
-    } else {
-      container.appendChild(document.createTextNode(run.text));
+      target.appendChild(em);
+      target = em;
     }
+
+    run.text.split("\n").forEach((part, j) => {
+      if (j > 0) target.appendChild(document.createElement("br"));
+      if (part) target.appendChild(document.createTextNode(part));
+    });
   });
 }
 
@@ -609,10 +676,28 @@ pdfNextBtn.addEventListener("click", () => {
   if (pdfPageNum < pdfTotalPages) loadPdfPage(currentText.id, pdfPageNum + 1);
 });
 
+// Whether `el` is a normal flowing paragraph that a sentence could safely
+// continue into — excludes headings (bold/centered), footers/footnotes
+// (muted or noticeably smaller than body text), and row blocks (e.g. a
+// title/author line), using only the same layout signals already computed
+// server-side, never the text content itself.
+function looksLikeBodyParagraph(el) {
+  if (!el || !el.classList || !el.classList.contains("pblock")) return false;
+  if (el.classList.contains("muted") || el.classList.contains("bold") || el.classList.contains("prow")) {
+    return false;
+  }
+  if (el.style.textAlign && el.style.textAlign !== "left") return false;
+  const relSize = parseFloat(el.style.fontSize);
+  return relSize >= 0.9 && relSize <= 1.15;
+}
+
 // Mirrors getSentenceContext, but scoped to the single block the selection
 // started in (a real PDF paragraph/heading/footnote) instead of the whole
 // page — context never bleeds across blocks, and there's no huge document
-// tree to walk.
+// tree to walk. If the sentence runs off the end of the block (looks cut
+// off, not finished) and the next block on the page is an ordinary
+// paragraph, its text is folded in too, capped at one block so this can't
+// chain indefinitely.
 function getPdfContext(range) {
   const startNode = range.startContainer;
   const endNode = range.endContainer;
@@ -626,7 +711,12 @@ function getPdfContext(range) {
   const start = globalTextOffset(block, startNode, range.startOffset);
   const end = globalTextOffset(block, endNode, range.endOffset);
 
-  return extractSentenceContext(block.textContent, start, end) || range.toString();
+  let fullText = block.textContent;
+  if (sentenceRunsOffEnd(fullText, end) && looksLikeBodyParagraph(block.nextElementSibling)) {
+    fullText += " " + block.nextElementSibling.textContent;
+  }
+
+  return extractSentenceContext(fullText, start, end) || range.toString();
 }
 
 pdfPage.addEventListener("mouseup", () => {

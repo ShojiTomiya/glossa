@@ -8,6 +8,10 @@ INDEX_PATH = TEXTS_DIR / "index.json"
 
 TEXTS_DIR.mkdir(exist_ok=True)
 
+# Kinds stored as structured blocks (heading/paragraph/list-item/table-row +
+# styled text runs) in a .json file, rather than a plain .txt or the raw file.
+BLOCK_KINDS = {"epub", "url"}
+
 
 def _load_index() -> list:
     if not INDEX_PATH.exists():
@@ -57,6 +61,24 @@ def save_pdf(title: str, source_lang: str, raw: bytes) -> dict:
     return entry
 
 
+def save_blocks(title: str, source_lang: str, blocks: list, kind: str = "epub") -> dict:
+    assert kind in BLOCK_KINDS, f"unknown block kind {kind!r}"
+    text_id = uuid.uuid4().hex[:12]
+    (TEXTS_DIR / f"{text_id}.json").write_text(json.dumps(blocks, ensure_ascii=False), encoding="utf-8")
+
+    entry = {
+        "id": text_id,
+        "title": title,
+        "source_lang": source_lang,
+        "kind": kind,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    index = _load_index()
+    index.append(entry)
+    _save_index(index)
+    return entry
+
+
 def list_texts() -> list:
     return sorted(_load_index(), key=lambda e: e["created_at"], reverse=True)
 
@@ -74,6 +96,13 @@ def get_text(text_id: str) -> dict | None:
         if not path.exists():
             return None
         return {**entry, "kind": "pdf"}
+
+    if kind in BLOCK_KINDS:
+        path = TEXTS_DIR / f"{text_id}.json"
+        if not path.exists():
+            return None
+        blocks = json.loads(path.read_text(encoding="utf-8"))
+        return {**entry, "kind": kind, "blocks": blocks}
 
     path = TEXTS_DIR / f"{text_id}.txt"
     if not path.exists():
@@ -109,7 +138,13 @@ def delete_text(text_id: str) -> bool:
         return False
     _save_index(new_index)
 
-    suffix = ".pdf" if entry and entry.get("kind") == "pdf" else ".txt"
+    kind = entry.get("kind", "text") if entry else "text"
+    if kind == "pdf":
+        suffix = ".pdf"
+    elif kind in BLOCK_KINDS:
+        suffix = ".json"
+    else:
+        suffix = ".txt"
     path = TEXTS_DIR / f"{text_id}{suffix}"
     if path.exists():
         path.unlink()
