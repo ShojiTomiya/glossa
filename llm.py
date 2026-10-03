@@ -5,6 +5,7 @@ from openai import OpenAI, BadRequestError, RateLimitError
 
 from config import CONFIG, LANGUAGES
 from prompts import translate_messages, explain_messages, FIX_JSON_PROMPT
+import phonetics
 
 client = OpenAI(base_url=CONFIG["base_url"], api_key=CONFIG["api_key"])
 
@@ -77,17 +78,18 @@ def explain(phrase: str, context: str, source_lang: str, target_lang: str) -> di
 
     content = _call_explain(messages)
     parsed, error = _parse_json(content)
-    if parsed is not None:
-        return parsed
 
-    # one retry: ask the model to fix its own malformed JSON
-    fix_messages = messages + [
-        {"role": "assistant", "content": content},
-        {"role": "user", "content": FIX_JSON_PROMPT.format(error=error, raw=content[:1000])},
-    ]
-    content = _call_explain(fix_messages)
-    parsed, error = _parse_json(content)
-    if parsed is not None:
-        return parsed
+    if parsed is None:
+        # one retry: ask the model to fix its own malformed JSON
+        fix_messages = messages + [
+            {"role": "assistant", "content": content},
+            {"role": "user", "content": FIX_JSON_PROMPT.format(error=error, raw=content[:1000])},
+        ]
+        content = _call_explain(fix_messages)
+        parsed, error = _parse_json(content)
+        if parsed is None:
+            raise ValueError(f"Model returned invalid JSON twice ({error}). Raw response: {content[:500]!r}")
 
-    raise ValueError(f"Model returned invalid JSON twice ({error}). Raw response: {content[:500]!r}")
+    if isinstance(parsed, dict):
+        phonetics.add_phonetics(parsed.get("words"), source_lang)
+    return parsed

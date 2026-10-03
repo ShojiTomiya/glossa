@@ -7,3 +7,5 @@ pymupdf
 ebooklib
 beautifulsoup4
 trafilatura
+phonemizer
+espeakng-loader

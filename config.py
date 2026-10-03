@@ -29,3 +29,12 @@ LANGUAGES = {
     "en": "English",
     "pl": "Polish",
 }
+
+ESPEAK_VOICES = {
+    "de": "de",
+    "es": "es",
+    "it": "it",
+    "fr": "fr-fr",
+    "en": "en-us",
+    "pl": "pl",
+}

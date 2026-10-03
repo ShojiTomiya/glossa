@@ -69,14 +69,6 @@ BASE_PROMPT = (
     "in {target_lang}. Do not mechanically translate the lemma if the form has a different "
     "contextual meaning.\n"
 
-    '  - "phonetic": dictionary-style IPA transcription of the word or form in {source_lang}. '
-    "Use the standard broad IPA convention normally used by learner dictionaries. "
-    "Give the canonical dictionary pronunciation, not a narrow transcription of natural or "
-    "reduced speech. Do not use syllabic consonants, allophonic symbols, or other fine phonetic "
-    "detail unless they are normally part of the standard dictionary convention for {source_lang}. "
-    "Use standard IPA symbols, stress marks and vowel-length marks where appropriate. "
-    "Do not infer pronunciation from spelling alone.\n"
-
     '  - "part_of_speech": the part of speech in {target_lang}\n'
 
     '  - "grammatical_details": relevant grammatical information in {target_lang}\n'

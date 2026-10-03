@@ -11,8 +11,6 @@ TABLE_EXTRA = {
         "makes this relevant.\n"
         "- Nouns: give number when relevant; do not invent grammatical gender or case. "
         "Pronouns: give person, number and grammatical function/case when relevant.\n"
-        "- phonetic: use broad General American IPA. Pay attention to silent letters, stress, "
-        "vowel reduction and common consonant changes, but avoid narrow allophonic detail."
     ).strip(),
 
     "Spanish": (
@@ -26,8 +24,6 @@ TABLE_EXTRA = {
         "- Reflexive or pronominal verbs: base_form includes se when appropriate. Distinguish "
         "reflexive, reciprocal, impersonal, passive, or purely pronominal uses when relevant.\n"
         "- Keep the personal a when it is present and grammatically meaningful.\n"
-        "- phonetic: use broad standard Spanish IPA. Avoid narrow regional or allophonic detail "
-        "unless the context specifically requires it."
     ).strip(),
 
     "German": (
@@ -46,10 +42,6 @@ TABLE_EXTRA = {
         "- Pay particular attention to case because it can be determined by a verb, preposition, "
         "article, adjective ending, or syntactic role. For two-way prepositions such as in, auf "
         "and an, distinguish location from direction/movement when that distinction applies.\n"
-        "- phonetic: use broad standard German IPA in a learner-dictionary style. Represent "
-        "stress, vowel length and important German consonant distinctions where appropriate. "
-        "Avoid narrow allophonic detail and avoid syllabic consonants such as n̩ unless they are "
-        "part of the chosen broad dictionary convention."
     ).strip(),
 
     "Italian": (
@@ -62,8 +54,6 @@ TABLE_EXTRA = {
         "indirect object, partitive or locative uses.\n"
         "- Reflexive verbs: base_form ends in -si when appropriate.\n"
         "- Truncated and elided forms: give the full base form when useful.\n"
-        "- phonetic: use broad standard Italian IPA. Pay attention to stress, consonant length, "
-        "and the main pronunciation distinctions, but avoid narrow phonetic detail."
     ).strip(),
 }
 
