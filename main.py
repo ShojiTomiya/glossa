@@ -9,6 +9,8 @@ from pydantic import BaseModel
 import storage
 import llm
 import pdf_render
+import video
+from config import LANGUAGES
 from extract import extract_epub_blocks, extract_url_blocks
 
 app = FastAPI()
@@ -34,6 +36,12 @@ class UpdateTextRequest(BaseModel):
 
 
 class ImportUrlRequest(BaseModel):
+    url: str
+    source_lang: str
+    title: str | None = None
+
+
+class ImportVideoRequest(BaseModel):
     url: str
     source_lang: str
     title: str | None = None
@@ -76,6 +84,8 @@ async def upload(file: UploadFile, title: str = Form(...), source_lang: str = Fo
 
 @app.post("/api/import-url")
 def import_url(req: ImportUrlRequest):
+    if video.parse_video_id(req.url):
+        raise HTTPException(400, "That's a YouTube link; use the Video tab to import it.")
     try:
         blocks, extracted_title = extract_url_blocks(req.url)
     except ValueError as e:
@@ -87,6 +97,24 @@ def import_url(req: ImportUrlRequest):
         blocks = [heading] + blocks
     entry = storage.save_blocks(title, req.source_lang, blocks, kind="url")
     return entry
+
+
+@app.post("/api/import-video")
+def import_video(req: ImportVideoRequest):
+    # Sync `def` on purpose: yt-dlp blocks for seconds, and FastAPI runs plain
+    # `def` endpoints in a worker thread instead of on the event loop.
+    if req.source_lang not in LANGUAGES:
+        raise HTTPException(400, f"Unsupported language '{req.source_lang}'.")
+    video_id = video.parse_video_id(req.url)
+    if video_id is None:
+        raise HTTPException(400, "That doesn't look like a YouTube video link.")
+    try:
+        result = video.fetch_subtitles(video_id, req.source_lang)
+    except video.VideoError as e:
+        raise HTTPException(e.status_code, str(e))
+
+    title = (req.title or "").strip() or result["title"]
+    return storage.save_video(title, req.source_lang, video_id, result["segments"], result["subtitle_source"])
 
 
 @app.get("/api/texts")
@@ -148,10 +176,18 @@ def explain(req: ExplainRequest):
     return result
 
 
+class RevalidatingStaticFiles(StaticFiles):
+
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
 BASE_DIR = Path(__file__).parent
-app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
+app.mount("/static", RevalidatingStaticFiles(directory=BASE_DIR / "static"), name="static")
 
 
 @app.get("/")
 def index():
-    return FileResponse(BASE_DIR / "static" / "index.html")
+    return FileResponse(BASE_DIR / "static" / "index.html", headers={"Cache-Control": "no-cache"})

@@ -79,6 +79,26 @@ def save_blocks(title: str, source_lang: str, blocks: list, kind: str = "epub") 
     return entry
 
 
+def save_video(title: str, source_lang: str, video_id: str, segments: list, subtitle_source: str) -> dict:
+
+    assert subtitle_source in ("manual", "auto"), f"unknown subtitle source {subtitle_source!r}"
+    text_id = uuid.uuid4().hex[:12]
+    (TEXTS_DIR / f"{text_id}.json").write_text(json.dumps(segments, ensure_ascii=False), encoding="utf-8")
+    entry = {
+        "id": text_id,
+        "title": title,
+        "source_lang": source_lang,
+        "kind": "video",
+        "video_id": video_id,
+        "subtitle_source": subtitle_source,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    index = _load_index()
+    index.append(entry)
+    _save_index(index)
+    return entry
+
+
 def list_texts() -> list:
     return sorted(_load_index(), key=lambda e: e["created_at"], reverse=True)
 
@@ -96,6 +116,12 @@ def get_text(text_id: str) -> dict | None:
         if not path.exists():
             return None
         return {**entry, "kind": "pdf"}
+
+    if kind == "video":
+        path = TEXTS_DIR / f"{text_id}.json"
+        if not path.exists():
+            return None
+        return {**entry, "kind": "video", "segments": json.loads(path.read_text(encoding="utf-8"))}
 
     if kind in BLOCK_KINDS:
         path = TEXTS_DIR / f"{text_id}.json"
@@ -125,7 +151,8 @@ def update_text(text_id: str, title: str, source_lang: str) -> dict | None:
     if entry is None:
         return None
     entry["title"] = title
-    entry["source_lang"] = source_lang
+    if entry.get("kind") != "video":  # the subtitles were fetched in this language
+        entry["source_lang"] = source_lang
     _save_index(index)
     return entry
 
@@ -141,7 +168,7 @@ def delete_text(text_id: str) -> bool:
     kind = entry.get("kind", "text") if entry else "text"
     if kind == "pdf":
         suffix = ".pdf"
-    elif kind in BLOCK_KINDS:
+    elif kind in BLOCK_KINDS or kind == "video":
         suffix = ".json"
     else:
         suffix = ".txt"

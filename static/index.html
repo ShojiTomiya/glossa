@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>glossa</title>
 <link rel="stylesheet" href="/static/style.css">
+<meta name="referrer" content="strict-origin-when-cross-origin">
 </head>
 <body>
 
@@ -42,6 +43,7 @@
         <option value="it">Italian</option>
         <option value="fr">French</option>
         <option value="en">English</option>
+        <option value="pl">Polish</option>
       </select>
     </label>
     <button id="upload-open-btn" class="btn btn-sm btn-primary">Upload</button>
@@ -56,6 +58,15 @@
   <div id="pdf-reader" class="hidden">
     <div id="pdf-page"></div>
   </div>
+
+  <div id="video-reader" class="hidden">
+    <div id="video-stage">
+      <div id="video-player-box"></div>
+      <div id="video-error" class="hidden"></div>
+    </div>
+    <div id="cue-list"></div>
+    <button id="video-follow-btn" class="btn hidden"></button>
+  </div>
 </div>
 
 <button id="bookmark-jump-btn" class="btn btn-icon hidden" title="Go to bookmark" aria-label="Go to bookmark">&#128278;</button>
@@ -67,6 +78,7 @@
   <div class="upload-mode-toggle" role="tablist">
     <button type="button" id="upload-mode-file-btn" class="btn btn-sm btn-primary" aria-pressed="true">File</button>
     <button type="button" id="upload-mode-url-btn" class="btn btn-sm" aria-pressed="false">Link</button>
+    <button type="button" id="upload-mode-video-btn" class="btn btn-sm" aria-pressed="false">Video</button>
   </div>
   <form id="upload-form">
     <label class="field-block" id="file-field">
@@ -74,7 +86,7 @@
       <input type="file" id="file-input" accept=".pdf,.epub,.txt" required>
     </label>
     <label class="field-block hidden" id="url-field">
-      Article URL
+      <span id="url-field-label">Article URL</span>
       <input type="url" id="url-input" placeholder="https://example.com/article">
     </label>
     <label class="field-block">
@@ -89,6 +101,7 @@
         <option value="it">Italian</option>
         <option value="fr">French</option>
         <option value="en">English</option>
+        <option value="pl">Polish</option>
       </select>
     </label>
     <div class="dialog-actions">
@@ -122,6 +135,7 @@
         <option value="it">Italian</option>
         <option value="fr">French</option>
         <option value="en">English</option>
+        <option value="pl">Polish</option>
       </select>
     </label>
     <div class="dialog-actions">

@@ -9,3 +9,4 @@ beautifulsoup4
 trafilatura
 phonemizer
 espeakng-loader
+yt-dlp[default]

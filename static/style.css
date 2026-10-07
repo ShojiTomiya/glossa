@@ -599,3 +599,173 @@ dialog select {
 .explain-text {
   margin: 8px 0;
 }
+
+/* style.css has no global .hidden, only per-element rules. */
+#video-reader.hidden,
+#video-error.hidden,
+#video-follow-btn.hidden {
+  display: none;
+}
+
+/* Layout: the player on top, the cue window right under it, both the same
+   width and centred. The width is the largest that lets player + window fit in
+   the viewport without scrolling the page (capped at 1100px).
+   --topbar-h is set from JS. Tweak the number of visible lines with
+   --cue-lines. */
+#video-reader {
+  --cue-lines: 4;
+  --cue-window-h: calc(var(--cue-lines) * 1.5 * var(--reader-font-size) + 16px);
+  --video-w: min(
+    1100px,
+    max(320px, calc((100vh - var(--topbar-h, 72px) - var(--cue-window-h) - 80px) * 16 / 9))
+  );
+  position: relative;
+  width: min(calc(100% - 24px), var(--video-w));
+  margin: 0 auto;
+  padding: 16px 0 24px;
+}
+
+#video-stage {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: #000;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+#video-player-box {
+  position: absolute;
+  inset: 0;
+}
+
+#video-player-box iframe {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+#video-error {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 16px;
+  text-align: center;
+  background: #161616;
+  color: #eee;
+  font-size: 0.9rem;
+}
+
+#video-error p {
+  margin: 0;
+  max-width: 48ch;
+}
+
+#video-error a {
+  color: #9db0ff;
+}
+
+/* Cue window: fixed height, the active cue is kept in its middle by JS. The
+   vertical padding lets the first and last cue reach the middle too, and the
+   mask fades the lines at the top and bottom edge. */
+#cue-list {
+  position: relative; /* offsetParent for the centring maths in JS */
+  height: var(--cue-window-h);
+  margin-top: 10px;
+  padding: calc(var(--cue-window-h) / 2 - var(--reader-font-size)) 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  font-family: var(--reader-font-family);
+  font-size: var(--reader-font-size);
+  line-height: 1.5;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 22%, #000 78%, transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 22%, #000 78%, transparent 100%);
+}
+
+#cue-list::-webkit-scrollbar {
+  display: none;
+}
+
+.cue {
+  position: relative;
+  padding: 4px 4.5em; /* equal on both sides, so the text is truly centred */
+  border-radius: 6px;
+  text-align: center;
+  opacity: 0.5;
+  transition: opacity 0.2s;
+}
+
+.cue:hover {
+  opacity: 0.85;
+}
+
+.cue.active {
+  opacity: 1;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.cue-text {
+  user-select: text;
+  overflow-wrap: anywhere;
+}
+
+/* Not selectable, so a selection never picks up timestamps. */
+.cue-time {
+  position: absolute;
+  left: 0.6em;
+  top: 0.55em;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  font-size: 0.7em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.5;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.cue-time:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.cue.active .cue-time {
+  color: var(--text);
+}
+
+#video-follow-btn {
+  position: absolute;
+  right: 8px;
+  bottom: 32px;
+  z-index: 5;
+  box-shadow: var(--shadow);
+}
+
+/* Library row badge */
+
+.text-kind-badge {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  border: 1px dashed var(--border);
+  border-radius: 999px;
+  padding: 2px 8px;
+  margin-left: 6px;
+}
+
+@media (max-width: 700px) {
+  #video-stage {
+    border-radius: 0;
+  }
+
+  .cue {
+    padding: 4px 3.2em;
+  }
+}
