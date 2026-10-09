@@ -600,6 +600,32 @@ dialog select {
   margin: 8px 0;
 }
 
+/* Article images (blocks of kind "image") */
+
+.reader-image {
+  margin: 1.2em 0;
+  text-align: center;
+}
+
+.reader-image img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0 auto;
+  border-radius: 4px;
+}
+
+.reader-image-missing {
+  display: none;
+}
+
+.reader-image .reader-caption {
+  display: block;
+  margin-top: 0.5em;
+  font-size: 0.85em;
+  color: var(--text-muted);
+}
+
 /* style.css has no global .hidden, only per-element rules. */
 #video-reader.hidden,
 #video-error.hidden,

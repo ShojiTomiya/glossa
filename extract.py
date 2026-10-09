@@ -1,4 +1,5 @@
 import re
+from urllib.parse import urljoin
 
 import ebooklib
 import trafilatura
@@ -72,21 +73,95 @@ def _table_row_data(tr) -> dict:
     return {"kind": "table-row", "runs": runs}
 
 
+def _join(base: str, value: str) -> str:
+
+    try:
+        return urljoin(base, value)
+    except ValueError:
+        return ""
+
+
+IMAGE_SRC_ATTRS = ("src", "data-src", "data-lazy-src", "data-original", "data-srcset", "srcset")
+
+
+def _image_urls(img, base_url: str) -> list[str]:
+
+    urls = []
+    for attr in IMAGE_SRC_ATTRS:
+        value = img.get(attr)
+        if value and "srcset" in attr:
+            value = value.split(",")[0].strip().split(" ")[0]
+        if value and not value.startswith("data:"):
+            joined = _join(base_url, value)
+            if joined:
+                urls.append(joined)
+    return urls
+
+
+def _clean_caption(text: str) -> str:
+
+    text = " ".join(text.split())
+    text = re.sub(r"\s+([.,;:!?)\]»”’])", r"\1", text)
+    return re.sub(r"([(\[«„‘])\s+", r"\1", text)
+
+
+def _figure_captions(page_html: str, base_url: str) -> dict[str, str]:
+   
+    captions: dict[str, str] = {}
+    for figure in BeautifulSoup(page_html, "html.parser").find_all("figure"):
+        caption = figure.find("figcaption")
+        text = _clean_caption(caption.get_text(" ")) if caption else ""
+        if not text:
+            continue
+        for img in figure.find_all("img"):
+            for src in _image_urls(img, base_url):
+                captions.setdefault(src, text)
+                captions.setdefault(src.split("?")[0], text)
+    return captions
+
+
+def _drop_caption_leftovers(blocks: list[dict]) -> list[dict]:
+   
+    keep = []
+    for i, block in enumerate(blocks):
+        if block["kind"] == "paragraph":
+            text = _clean_caption("".join(r["text"] for r in block["runs"]))
+            neighbours = [blocks[j] for j in (i - 1, i + 1) if 0 <= j < len(blocks)]
+            if text and any(n["kind"] == "image" and text in n.get("caption", "") for n in neighbours):
+                continue
+        keep.append(block)
+    return keep
+
+
 def extract_url_blocks(url: str) -> tuple[list[dict], str | None]:
     downloaded = trafilatura.fetch_url(url)
     if not downloaded:
         raise ValueError("Could not fetch that URL. Check the address or try again.")
 
-    html = trafilatura.extract(downloaded, favor_precision=True, output_format="html", include_formatting=True)
+    # url= makes the extractor resolve relative and protocol-relative image
+    # addresses against the page (without it "//cdn.x/a.png" would become http://).
+    html = trafilatura.extract(downloaded, url=url, favor_precision=True, output_format="html",
+                               include_formatting=True, include_images=True)
     if not html or not html.strip():
         raise ValueError("Could not find readable article content at that URL.")
 
     soup = BeautifulSoup(html, "html.parser")
+    captions = _figure_captions(downloaded, url)
     blocks = []
-    for el in soup.find_all(list(HEADING_TAGS) + ["p", "li", "tr"]):
+    for el in soup.find_all(list(HEADING_TAGS) + ["p", "li", "tr", "img"]):
         # <p>/<li> nested inside a <table> row or another <li> are already
         # covered when we handle their ancestor — skip to avoid duplicates.
         if el.name != "tr" and el.find_parent(["li", "tr"]) is not None:
+            continue
+
+        if el.name == "img":
+            raw_src = (el.get("src") or "").strip()
+            src = _join(url, raw_src) if raw_src else ""
+            if src and not raw_src.startswith("data:"):
+                # kind "image": "src" is the remote address; images.localize() replaces it
+                # with the stored "file" name (and drops the block if the download fails).
+                blocks.append({"kind": "image", "src": src, "alt": (el.get("alt") or "").strip(),
+                               "caption": captions.get(src) or captions.get(src.split("?")[0], "")})
             continue
 
         if el.name == "tr":
@@ -101,7 +176,8 @@ def extract_url_blocks(url: str) -> tuple[list[dict], str | None]:
         if any(r["text"].strip() for r in block["runs"]):
             blocks.append(block)
 
-    if not blocks:
+    blocks = _drop_caption_leftovers(blocks)
+    if not any(b["kind"] != "image" for b in blocks):
         raise ValueError("Could not find readable article content at that URL.")
 
     metadata = trafilatura.extract_metadata(downloaded)

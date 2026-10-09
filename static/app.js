@@ -434,10 +434,33 @@ function renderReaderBlocks(blocks) {
     });
     lineDiv.appendChild(dot);
 
-    const textSpan = document.createElement("span");
-    textSpan.className = "reader-line-text reader-block-text";
-    appendRuns(textSpan, block.runs, false);
-    lineDiv.appendChild(textSpan);
+    if (block.kind === "image") {
+      // A picture kept with the article (see images.py); the caption is real
+      // text, so it can be selected and translated like the rest.
+      lineDiv.classList.add("reader-image");
+      const img = document.createElement("img");
+      img.src = `/api/texts/${encodeURIComponent(currentText.id)}/images/${encodeURIComponent(block.file)}`;
+      img.alt = block.alt || "";
+      img.setAttribute("loading", "lazy");
+      img.addEventListener("error", () => {
+        // The file is missing (e.g. disk trouble while importing): hide the picture
+        // instead of showing a broken-image icon; a caption, if any, stays.
+        img.remove();
+        if (!block.caption) lineDiv.classList.add("reader-image-missing");
+      });
+      lineDiv.appendChild(img);
+      if (block.caption) {
+        const caption = document.createElement("span");
+        caption.className = "reader-line-text reader-block-text reader-caption";
+        caption.textContent = block.caption;
+        lineDiv.appendChild(caption);
+      }
+    } else {
+      const textSpan = document.createElement("span");
+      textSpan.className = "reader-line-text reader-block-text";
+      appendRuns(textSpan, block.runs, false);
+      lineDiv.appendChild(textSpan);
+    }
 
     readerContent.appendChild(lineDiv);
 
@@ -877,9 +900,6 @@ document.addEventListener("mousedown", (e) => {
   }
 });
 
-/* ======================================================================
-   Video mode
-   ====================================================================== */
 
 /* Video mode: YouTube IFrame player + subtitle cues synced to playback.
  *

@@ -4,4 +4,5 @@ __pycache__/
 texts/*.txt
 texts/*.pdf
 texts/*.json
+texts/*.images
 .DS_Store

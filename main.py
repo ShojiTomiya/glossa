@@ -10,6 +10,7 @@ import storage
 import llm
 import pdf_render
 import video
+import images
 from config import LANGUAGES
 from extract import extract_epub_blocks, extract_url_blocks
 
@@ -95,7 +96,15 @@ def import_url(req: ImportUrlRequest):
     if extracted_title:
         heading = {"kind": "heading", "level": 1, "runs": [{"text": extracted_title, "italic": False, "bold": False}]}
         blocks = [heading] + blocks
+    # Pictures are downloaded (with limits, see images.py) and kept next to the text.
+    # A picture that can't be fetched is left out; it never fails the import.
+    blocks, image_files = images.localize(blocks, referer=req.url)
     entry = storage.save_blocks(title, req.source_lang, blocks, kind="url")
+    try:
+        images.save_images(entry["id"], image_files)
+    except OSError:
+        # e.g. disk full: the article is saved, so keep it; the reader hides pictures whose file is missing
+        images.delete_images(entry["id"])
     return entry
 
 
@@ -141,6 +150,16 @@ def get_pdf_page(text_id: str, page_num: int):
         raise HTTPException(404, str(e))
 
 
+@app.get("/api/texts/{text_id}/images/{name}")
+def get_text_image(text_id: str, name: str):
+    path = images.image_path(text_id, name)
+    if path is None:
+        raise HTTPException(404, "Image not found")
+    # The name is a hash of the source address, so a file never changes: cache it for good.
+    return FileResponse(path, headers={"Cache-Control": "public, max-age=31536000, immutable",
+                                       "X-Content-Type-Options": "nosniff"})
+
+
 @app.patch("/api/texts/{text_id}")
 def update_text(text_id: str, req: UpdateTextRequest):
     entry = storage.update_text(text_id, req.title, req.source_lang)
@@ -153,6 +172,7 @@ def update_text(text_id: str, req: UpdateTextRequest):
 def delete_text(text_id: str):
     if not storage.delete_text(text_id):
         raise HTTPException(404, "Text not found")
+    images.delete_images(text_id)
     return {"ok": True}
 
 
