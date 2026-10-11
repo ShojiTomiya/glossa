@@ -201,13 +201,17 @@ def _ydl_opts(log: _Collector) -> dict:
     return opts
 
 
-def _extract(opts: dict, url: str, download: bool) -> dict | None:
+def _ydl(opts: dict):
     if yt_dlp is None:
         raise VideoError(
             'Video import needs yt-dlp, which is not installed on the server. '
             'Install it with: pip install "yt-dlp[default]" (then restart the server).',
             503, "ytdlp_missing")
-    with yt_dlp.YoutubeDL(opts) as ydl:
+    return yt_dlp.YoutubeDL(opts)
+
+
+def _extract(opts: dict, url: str, download: bool) -> dict | None:
+    with _ydl(opts) as ydl:
         return ydl.extract_info(url, download=download)
 
 
@@ -256,28 +260,24 @@ def _find_subtitle_file(info: dict | None, key: str, tmp_dir: str) -> str | None
     return found[0] if found else None
 
 
-def fetch_subtitles(video_id: str, lang: str) -> dict:
+def _fetch_track_directly(ydl, info: dict, key: str, source: str) -> list[dict] | None:
+    # The first pass already lists every track's formats with their addresses,
+    # so the json3 file can be fetched right away (headers and cookies come
+    # from the same yt-dlp session), without a second pass over the video page.
+    # None = that didn't work out; the caller falls back to the full download.
+    tracks = info.get("subtitles" if source == "manual" else "automatic_captions") or {}
+    fmt = next((f for f in tracks.get(key) or [] if f.get("ext") == "json3" and f.get("url")), None)
+    if fmt is None:
+        return None
+    try:
+        request = yt_dlp.networking.Request(fmt["url"], headers=fmt.get("http_headers") or {})
+        with ydl.urlopen(request) as response:
+            return parse_json3(response.read()) or None
+    except Exception:  # network errors, an HTML error page instead of JSON, ...
+        return None
 
-    url = canonical_url(video_id)
-    log = _Collector()
 
-    # Both write flags are needed for yt-dlp to build the full automatic_captions
-    # map; nothing is written to disk in this pass (download=False).
-    probe = {**_ydl_opts(log), "writesubtitles": True, "writeautomaticsub": True}
-    info = _guarded(lambda: _extract(probe, url, False), log)
-    if not isinstance(info, dict):
-        raise VideoError("yt-dlp returned no data for this video." + _hint(log), 502, "extraction_failed")
-
-    if info.get("is_live") or info.get("live_status") in ("is_live", "is_upcoming"):
-        raise VideoError("Live streams and premieres have no finished subtitles yet.", 422, "live")
-    if info.get("playable_in_embed") is False:
-        raise VideoError("The owner has disabled embedding for this video, so Glossa can't play it.",
-                         422, "embedding_disabled")
-
-    picked = pick_track(info, lang)
-    if picked is None:
-        raise VideoError(_no_subtitles_message(info, lang), 404, "no_subtitles")
-    key, source = picked
+def _download_track(url: str, key: str, source: str, log: _Collector) -> list[dict]:
 
     with tempfile.TemporaryDirectory(prefix="glossa-subs-") as tmp:
         opts = {
@@ -302,6 +302,37 @@ def fetch_subtitles(video_id: str, lang: str) -> dict:
         raise VideoError("The subtitles came in an unexpected format." + _hint(log), 502, "subtitles_parse_failed") from exc
     if not segments:
         raise VideoError("The subtitle track is empty.", 404, "no_subtitles")
+    return segments
+
+
+def fetch_subtitles(video_id: str, lang: str) -> dict:
+
+    url = canonical_url(video_id)
+    log = _Collector()
+
+    # Both write flags are needed for yt-dlp to build the full automatic_captions
+    # map; nothing is written to disk in this pass (download=False).
+    probe = {**_ydl_opts(log), "writesubtitles": True, "writeautomaticsub": True}
+    with _ydl(probe) as ydl:
+        info = _guarded(lambda: ydl.extract_info(url, download=False), log)
+        if not isinstance(info, dict):
+            raise VideoError("yt-dlp returned no data for this video." + _hint(log), 502, "extraction_failed")
+
+        if info.get("is_live") or info.get("live_status") in ("is_live", "is_upcoming"):
+            raise VideoError("Live streams and premieres have no finished subtitles yet.", 422, "live")
+        if info.get("playable_in_embed") is False:
+            raise VideoError("The owner has disabled embedding for this video, so Glossa can't play it.",
+                             422, "embedding_disabled")
+
+        picked = pick_track(info, lang)
+        if picked is None:
+            raise VideoError(_no_subtitles_message(info, lang), 404, "no_subtitles")
+        key, source = picked
+
+        segments = _fetch_track_directly(ydl, info, key, source)
+
+    if segments is None:
+        segments = _download_track(url, key, source, log)
 
     return {
         "title": info.get("title") or video_id,

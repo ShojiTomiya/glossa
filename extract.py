@@ -6,7 +6,7 @@ import trafilatura
 from ebooklib import epub
 from bs4 import BeautifulSoup, NavigableString
 
-# PDFs are handled by pdf_render.py, which keeps each page's layout 
+# PDFs are handled by pdf_render.py, which keeps each page's layout.
 
 BLOCK_TAGS = ["p", "div", "li", "h1", "h2", "h3", "h4", "h5", "h6", "blockquote", "pre", "td"]
 HEADING_TAGS = {"h1", "h2", "h3", "h4", "h5", "h6"}
@@ -58,9 +58,7 @@ def extract_epub_blocks(path: str) -> list[dict]:
 
 
 def _table_row_data(tr) -> dict:
-    # Cells joined with an em dash on one line (e.g. "Born — 24 August
-    # 1899") instead of keeping them as a grid — good enough for the
-    # key/value infobox style tables this is mostly going to encounter.
+    
     cells = tr.find_all(["td", "th"], recursive=False)
     runs = []
     for cell in cells:
@@ -120,14 +118,17 @@ def _figure_captions(page_html: str, base_url: str) -> dict[str, str]:
     return captions
 
 
+def _is_caption_leftover(text: str, caption: str) -> bool:
+    return bool(text) and text in caption and len(text) >= len(caption) / 2
+
+
 def _drop_caption_leftovers(blocks: list[dict]) -> list[dict]:
-   
     keep = []
     for i, block in enumerate(blocks):
         if block["kind"] == "paragraph":
             text = _clean_caption("".join(r["text"] for r in block["runs"]))
             neighbours = [blocks[j] for j in (i - 1, i + 1) if 0 <= j < len(blocks)]
-            if text and any(n["kind"] == "image" and text in n.get("caption", "") for n in neighbours):
+            if any(n["kind"] == "image" and _is_caption_leftover(text, n.get("caption", "")) for n in neighbours):
                 continue
         keep.append(block)
     return keep

@@ -3,7 +3,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, UploadFile, Form, HTTPException
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 
 import storage
@@ -148,6 +148,20 @@ def get_pdf_page(text_id: str, page_num: int):
         return pdf_render.render_page(str(path), page_num)
     except ValueError as e:
         raise HTTPException(404, str(e))
+
+
+@app.get("/api/texts/{text_id}/pdf-page/{page_num}/images/{index}")
+def get_pdf_image(text_id: str, page_num: int, index: int):
+    path = storage.get_pdf_path(text_id)
+    if path is None:
+        raise HTTPException(404, "PDF not found")
+    try:
+        data, media_type = pdf_render.render_image(str(path), page_num, index)
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+    # The PDF never changes, but how it's rendered might: a day, not forever.
+    return Response(data, media_type=media_type, headers={"Cache-Control": "public, max-age=86400",
+                                                          "X-Content-Type-Options": "nosniff"})
 
 
 @app.get("/api/texts/{text_id}/images/{name}")

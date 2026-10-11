@@ -316,6 +316,9 @@ function setUploadMode(mode) {
   if (!isFile) {
     urlFieldLabel.textContent = URL_FIELD_TEXT[mode].label;
     urlInput.placeholder = URL_FIELD_TEXT[mode].placeholder;
+    // type="url" would reject "youtu.be/..." without a scheme or a bare video
+    // id, both of which the server's parse_video_id accepts.
+    urlInput.type = mode === "video" ? "text" : "url";
   }
 
   fileInput.required = isFile;
@@ -730,6 +733,22 @@ function renderPdfBlock(block) {
   return el;
 }
 
+// A picture from the page (see pdf_render.py). Its width is the share of the
+// text width it had in the PDF, so it scales with the reader column; a float
+// sits beside the next paragraph the way the page wraps text around it.
+function renderPdfImage(block, textId, pageNum) {
+  const img = document.createElement("img");
+  img.className = "pimage" + (block.float ? ` pimage-${block.float}` : "");
+  if (block.clear) img.style.clear = block.float;
+  img.src = `/api/texts/${encodeURIComponent(textId)}/pdf-page/${pageNum}/images/${block.index}`;
+  img.alt = "";
+  img.style.width = `${block.width}%`;
+  // Reserves the height before the file arrives, so the text doesn't jump.
+  img.style.aspectRatio = String(block.aspect);
+  img.addEventListener("error", () => img.remove());
+  return img;
+}
+
 async function loadPdfPage(textId, num) {
   const res = await fetch(`/api/texts/${textId}/pdf-page/${num}`);
   if (!res.ok) {
@@ -743,7 +762,7 @@ async function loadPdfPage(textId, num) {
   pdfTotalPages = data.total_pages;
   pdfPage.innerHTML = "";
   for (const block of data.blocks) {
-    pdfPage.appendChild(renderPdfBlock(block));
+    pdfPage.appendChild(block.kind === "image" ? renderPdfImage(block, textId, data.page) : renderPdfBlock(block));
   }
 
   pdfPageIndicator.textContent = `${pdfPageNum} / ${pdfTotalPages}`;
@@ -796,9 +815,13 @@ function getPdfContext(range) {
   const start = globalTextOffset(block, startNode, range.startOffset);
   const end = globalTextOffset(block, endNode, range.endOffset);
 
+  // A picture between the two paragraphs doesn't end the sentence.
+  let next = block.nextElementSibling;
+  while (next && next.classList.contains("pimage")) next = next.nextElementSibling;
+
   let fullText = block.textContent;
-  if (sentenceRunsOffEnd(fullText, end) && looksLikeBodyParagraph(block.nextElementSibling)) {
-    fullText += " " + block.nextElementSibling.textContent;
+  if (sentenceRunsOffEnd(fullText, end) && looksLikeBodyParagraph(next)) {
+    fullText += " " + next.textContent;
   }
 
   return extractSentenceContext(fullText, start, end) || range.toString();
