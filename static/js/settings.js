@@ -27,6 +27,8 @@ function applySettings() {
   if (themeInput) themeInput.checked = true;
   fontFamilySelect.value = fontFamily;
   fontSizeSelect.value = fontSize;
+  // The paged book reader (book.js) has to lay its pages out again.
+  document.dispatchEvent(new Event("glossa:settings"));
 }
 
 settingsBtn.addEventListener("click", () => {

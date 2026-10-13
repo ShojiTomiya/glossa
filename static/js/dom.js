@@ -19,3 +19,6 @@ export const popup = document.getElementById("popup");
 export const popupTranslation = document.getElementById("popup-translation");
 export const explainBtn = document.getElementById("explain-btn");
 export const explainPanel = document.getElementById("explain-panel");
+export const bookReader = document.getElementById("book-reader");
+export const bookViewport = document.getElementById("book-viewport");
+export const bookContent = document.getElementById("book-content");

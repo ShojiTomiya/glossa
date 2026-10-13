@@ -1,14 +1,12 @@
 import re
 from urllib.parse import urljoin
 
-import ebooklib
 import trafilatura
-from ebooklib import epub
 from bs4 import BeautifulSoup, NavigableString
 
-# PDFs are handled by pdf_render.py, which keeps each page's layout.
+# Article (URL) extraction. PDFs and EPUBs are kept as uploaded and rendered on
+# request by pdf_render.py and epub_render.py.
 
-BLOCK_TAGS = ["p", "div", "li", "h1", "h2", "h3", "h4", "h5", "h6", "blockquote", "pre", "td"]
 HEADING_TAGS = {"h1", "h2", "h3", "h4", "h5", "h6"}
 ITALIC_TAGS = {"i", "em"}
 BOLD_TAGS = {"b", "strong"}
@@ -31,30 +29,6 @@ def _collect_runs(el, italic: bool = False, bold: bool = False) -> list[dict]:
                 bold or child.name in BOLD_TAGS,
             ))
     return runs
-
-
-def _block_data(el) -> dict:
-    runs = _collect_runs(el)
-    if el.name in HEADING_TAGS:
-        return {"kind": "heading", "level": int(el.name[1]), "runs": runs}
-    return {"kind": "paragraph", "runs": runs}
-
-
-def extract_epub_blocks(path: str) -> list[dict]:
-    book = epub.read_epub(path, options={"ignore_ncx": True})
-    blocks = []
-    for item in book.get_items_of_type(ebooklib.ITEM_DOCUMENT):
-        soup = BeautifulSoup(item.get_content(), "html.parser")
-        for el in soup.find_all(BLOCK_TAGS):
-            if el.find(BLOCK_TAGS):
-                continue
-            block = _block_data(el)
-            if any(r["text"].strip() for r in block["runs"]):
-                blocks.append(block)
-
-    if not blocks:
-        raise ValueError("EPUB has no extractable text content.")
-    return blocks
 
 
 def _table_row_data(tr) -> dict:

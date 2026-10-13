@@ -1,6 +1,8 @@
 import { state } from "./state.js";
 import { pdfPage, pdfPrevBtn, pdfNextBtn, pdfPageIndicator } from "./dom.js";
-import { extractSentenceContext, sentenceRunsOffEnd, globalTextOffset } from "./context.js";
+import {
+  extractSentenceContext, sentenceRunsOffEnd, sentenceRunsOffStart, endsSentence, joinText, globalTextOffset,
+} from "./context.js";
 import { hidePopup, handleTextSelection } from "./selection.js";
 import { appendRuns } from "./reader.js";
 
@@ -22,7 +24,7 @@ export function loadPdfPageNum(textId) {
 function renderPdfBlock(block) {
   const isRows = block.kind === "rows";
   const el = document.createElement(isRows ? "div" : "p");
-  el.className = "pblock" + (block.muted ? " muted" : "") + (block.bold ? " bold" : "");
+  el.className = "pblock" + (block.muted ? " muted" : "") + (block.bold ? " bold" : "") + (block.edge ? " edge" : "");
   el.dataset.blockId = block.id;
   el.style.fontSize = `${block.rel_size}em`;
 
@@ -77,21 +79,61 @@ export function showPdfLoading() {
   pdfPageIndicator.textContent = "";
 }
 
+/* ---------- pages ---------- */
+
+// The pages next to the open one are fetched in the background: turning to
+// them is then instant, and a sentence running over the page edge can take
+// its context from them (getPdfContext). Kept for the open PDF only, and
+// only around the open page.
+const KEEP_PAGES_AROUND = 2;
+let cachedTextId = null;
+const pageRequests = new Map(); // page number -> Promise of its JSON (or null)
+const pageData = new Map(); // page number -> its JSON, once it has arrived
+
+function fetchPage(textId, num) {
+  if (cachedTextId !== textId) {
+    cachedTextId = textId;
+    pageRequests.clear();
+    pageData.clear();
+  }
+  if (!pageRequests.has(num)) {
+    const request = fetch(`/api/texts/${textId}/pdf-page/${num}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .catch(() => null);
+    pageRequests.set(num, request);
+    request.then((data) => {
+      if (cachedTextId !== textId) return;
+      if (data) pageData.set(num, data);
+      else pageRequests.delete(num); // let a later attempt try again
+    });
+  }
+  return pageRequests.get(num);
+}
+
+function keepPagesAround(textId, num, total) {
+  for (const n of [...pageRequests.keys()]) {
+    if (Math.abs(n - num) > KEEP_PAGES_AROUND) {
+      pageRequests.delete(n);
+      pageData.delete(n);
+    }
+  }
+  if (num > 1) fetchPage(textId, num - 1);
+  if (num < total) fetchPage(textId, num + 1);
+}
+
 // Bumped on every page request: only the latest one may fill the page (fast
 // clicks on "next", or going back to the library while a page loads).
 let pdfLoadToken = 0;
 
 export async function loadPdfPage(textId, num) {
   const token = ++pdfLoadToken;
-  const res = await fetch(`/api/texts/${textId}/pdf-page/${num}`);
+  const data = await fetchPage(textId, num);
   if (token !== pdfLoadToken || !state.currentText || state.currentText.id !== textId) return;
-  if (!res.ok) {
+  if (!data) {
     pdfPage.innerHTML = "";
     pdfPageIndicator.textContent = "";
     return;
   }
-  const data = await res.json();
-  if (token !== pdfLoadToken) return;
 
   pdfPageNum = data.page;
   pdfTotalPages = data.total_pages;
@@ -106,13 +148,19 @@ export async function loadPdfPage(textId, num) {
   localStorage.setItem(pdfPageKey(textId), String(pdfPageNum));
   hidePopup();
   window.scrollTo(0, 0);
+  keepPagesAround(textId, pdfPageNum, pdfTotalPages);
+}
+
+// The arrows are shared with the book reader (book.js), which handles them for EPUBs.
+function isOpenPdf() {
+  return state.currentText && state.currentText.kind === "pdf";
 }
 
 pdfPrevBtn.addEventListener("click", () => {
-  if (pdfPageNum > 1) loadPdfPage(state.currentText.id, pdfPageNum - 1);
+  if (isOpenPdf() && pdfPageNum > 1) loadPdfPage(state.currentText.id, pdfPageNum - 1);
 });
 pdfNextBtn.addEventListener("click", () => {
-  if (pdfPageNum < pdfTotalPages) loadPdfPage(state.currentText.id, pdfPageNum + 1);
+  if (isOpenPdf() && pdfPageNum < pdfTotalPages) loadPdfPage(state.currentText.id, pdfPageNum + 1);
 });
 
 // Whether `el` is a normal flowing paragraph that a sentence could safely
@@ -130,14 +178,71 @@ function looksLikeBodyParagraph(el) {
   return relSize >= 0.9 && relSize <= 1.15;
 }
 
-// Mirrors getSentenceContext, but scoped to the single block the selection
-// started in (a real PDF paragraph/heading/footnote) instead of the whole
-// page — context never bleeds across blocks, and there's no huge document
-// tree to walk. If the sentence runs off the end of the block (looks cut
-// off, not finished) and the next block on the page is an ordinary
-// paragraph, its text is folded in too, capped at one block so this can't
-// chain indefinitely.
-function getPdfContext(range) {
+// How a block next to the selected one is treated when the selected
+// sentence continues past its own block: "body" text it continues into,
+// "skip" for things in between (pictures, running header/footer, footnotes),
+// "stop" for anything that ends the paragraph (a heading, a title line).
+function elementRole(el) {
+  const c = el.classList;
+  if (!c || c.contains("pimage") || c.contains("efigure") || c.contains("edge") || c.contains("muted")) return "skip";
+  if (c.contains("pblock") && parseFloat(el.style.fontSize) < 0.9) return "skip";
+  return looksLikeBodyParagraph(el) ? "body" : "stop";
+}
+
+// The same for a block of page JSON (a neighbouring page that isn't shown).
+function blockRole(block) {
+  if (block.kind === "image" || block.edge || block.muted || block.rel_size < 0.9) return "skip";
+  const body = block.kind === "paragraph" && !block.bold && (block.align || "left") === "left" && block.rel_size <= 1.15;
+  return body ? "body" : "stop";
+}
+
+function blockText(block) {
+  // As renderPdfBlock joins it: runs separated by a space.
+  return block.rows.flatMap((row) => row.cells.flatMap((cell) => cell)).map((run) => run.text).join(" ");
+}
+
+const PAGE_EDGE = Symbol("page edge");
+
+// Text of the nearest body block before/after `el` on the page; null when a
+// heading or the like comes first; PAGE_EDGE when the page ends first.
+function neighbourOnPage(el, forward) {
+  const step = (n) => (forward ? n.nextElementSibling : n.previousElementSibling);
+  for (let n = step(el); n; n = step(n)) {
+    const role = elementRole(n);
+    if (role === "skip") continue;
+    return role === "body" ? n.textContent : null;
+  }
+  return PAGE_EDGE;
+}
+
+// The first (forward) or last body block of a neighbouring page, from its JSON.
+function bodyTextAtPageEdge(data, fromStart) {
+  if (!data) return null; // not fetched (yet): no context from it
+  const blocks = fromStart ? data.blocks : [...data.blocks].reverse();
+  for (const block of blocks) {
+    const role = blockRole(block);
+    if (role === "skip") continue;
+    return role === "body" ? blockText(block) : null;
+  }
+  return null;
+}
+
+const pdfNeighbourPages = {
+  before: () => bodyTextAtPageEdge(pageData.get(pdfPageNum - 1), false),
+  after: () => bodyTextAtPageEdge(pageData.get(pdfPageNum + 1), true),
+};
+
+// Context for a selection: the sentence around it, within the block (a real
+// paragraph/heading/footnote) the selection starts in. When the sentence
+// runs past the block's end, the next body paragraph is folded in; when it
+// started before the block (no sentence end before the selection, and the
+// paragraph before doesn't end one either), the previous one is. One block
+// each way at most. Pictures, running headers/footers and footnotes in
+// between are skipped, and at the page edge `pages` (PDF only) supplies the
+// neighbouring page's first or last paragraph. Also used by the book reader
+// (book.js), whose blocks share these classes and whose chapter is all in
+// the page anyway.
+export function getPdfContext(range, pages = null) {
   const startNode = range.startContainer;
   const endNode = range.endContainer;
   if (startNode.nodeType !== Node.TEXT_NODE || endNode.nodeType !== Node.TEXT_NODE) {
@@ -149,17 +254,24 @@ function getPdfContext(range) {
 
   const start = globalTextOffset(block, startNode, range.startOffset);
   const end = globalTextOffset(block, endNode, range.endOffset);
+  const own = block.textContent;
+  let text = own;
+  let offset = 0; // where `own` starts in `text`
 
-  // A picture between the two paragraphs doesn't end the sentence.
-  let next = block.nextElementSibling;
-  while (next && next.classList.contains("pimage")) next = next.nextElementSibling;
-
-  let fullText = block.textContent;
-  if (sentenceRunsOffEnd(fullText, end) && looksLikeBodyParagraph(next)) {
-    fullText += " " + next.textContent;
+  if (sentenceRunsOffEnd(own, end)) {
+    let after = neighbourOnPage(block, true);
+    if (after === PAGE_EDGE) after = pages ? pages.after() : null;
+    if (after) text = joinText(text, after)[0];
+  }
+  if (sentenceRunsOffStart(own, start)) {
+    let before = neighbourOnPage(block, false);
+    if (before === PAGE_EDGE) before = pages ? pages.before() : null;
+    if (before && !endsSentence(before)) [text, offset] = joinText(before, text);
   }
 
-  return extractSentenceContext(fullText, start, end) || range.toString();
+  // PDF text often has doubled spaces where runs meet; they mean nothing here.
+  const context = extractSentenceContext(text, offset + start, offset + end);
+  return context ? context.replace(/\s+/g, " ") : range.toString();
 }
 
 pdfPage.addEventListener("mouseup", () => {
@@ -167,5 +279,5 @@ pdfPage.addEventListener("mouseup", () => {
   const phrase = selection.toString().trim();
   if (!phrase || selection.rangeCount === 0) return;
   const range = selection.getRangeAt(0);
-  handleTextSelection(phrase, getPdfContext(range), range.getBoundingClientRect());
+  handleTextSelection(phrase, getPdfContext(range, pdfNeighbourPages), range.getBoundingClientRect());
 });

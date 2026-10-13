@@ -1,26 +1,26 @@
 # Glossa
 
-A personal reading app for learning languages. Upload a PDF, EPUB, or plain text file, import an article straight from a URL, or paste a YouTube link - read (or watch) it in the browser, and select any word or phrase to get an instant translation and a grammar breakdown.
+A personal reading app for learning languages. Upload a PDF or EPUB, import an article straight from a URL, or paste a YouTube link - read (or watch) it in the browser, and select any word or phrase to get an instant translation and a grammar breakdown.
 
 ## Features
 
 - Upload a PDF and read it page by page, laid out like the original - headers, footers, footnotes, page numbers all shown in place, styled by their actual size/weight/position instead of being flattened into one text stream. Multi-column pages are read column by column, and pictures are shown where they stand on the page, with the text wrapping around them as in the original
-- Upload EPUB and read it in a continuous reader with real headings and inline italic/bold kept intact (not flattened into plain text); `.txt` files read the same way, minus the structure they don't have to begin with
+- Upload an EPUB and read it page by page like in an e-reader: the book is laid out in pages that fit the window and your font size, the arrows (or ←/→) turn pages and go on into the next chapter, and the topbar shows how far into the book you are. Headings, italic/bold (also when the book sets them through its CSS), lists, quotes, pictures with their captions and footnotes are kept; the book's own contents page is left out. A picture that doesn't fit on what's left of a page moves to the next one, as in other readers
 - Import an article directly from a URL - the page's main content is extracted automatically (ads/nav/comments stripped out), with headings, bold/italic, tables, lists and pictures (captions included) kept as real structure instead of flattened text
 - Paste a YouTube link to learn from video: the player is embedded (nothing is downloaded) and the subtitles run in a window beneath it, synced to playback - the current line stays in the middle, a click on a timestamp jumps there. Select any part of the subtitles to translate or explain it (the video pauses); the neighbouring subtitle lines serve as context. Uploader-made subtitles are preferred, auto-generated ones are used otherwise and marked as such
 - Select any word or phrase for a quick translation popup
 - **Explain** panel: per-word breakdown (base form, translation, IPA pronunciation, part of speech, grammatical details) plus a plain-language explanation of why the phrase uses that exact grammatical form. IPA is generated locally with eSpeak NG, not by the LLM
-- Reading position is remembered automatically - current page for PDFs, a clickable line bookmark (with a floating jump-back button) for EPUB/TXT/URL reads, the playback position for videos
+- Reading position is remembered automatically - the current page for PDFs, the place in the book for EPUBs (it survives font and window size changes), the line at the top of the screen for articles, the playback position for videos
 - Adjustable reading font/size and light/dark/default themes - applies everywhere, including PDFs
 - Supported languages: German, Spanish, Italian, French, English, Polish (to add another, extend `LANGUAGES` and `ESPEAK_VOICES` in config.py; run `espeak-ng --voices` to see available voice codes). For videos the language is the one spoken in the video, i.e. the subtitle language
 
 ## Stack
 
-- **Backend:** FastAPI + Python - PDFs are rendered per-page via PyMuPDF's structured text extraction (`pdf_render.py`), not flattened to plain text; ebooklib/BeautifulSoup for EPUB, trafilatura for URL article extraction; [yt-dlp](https://github.com/yt-dlp/yt-dlp) for YouTube subtitles (`video.py`)
+- **Backend:** FastAPI + Python - PDFs are rendered per-page via PyMuPDF's structured text extraction (`pdf_render.py`), not flattened to plain text; EPUBs are rendered per-chapter from the original file (`epub_render.py`, BeautifulSoup), trafilatura for URL article extraction; [yt-dlp](https://github.com/yt-dlp/yt-dlp) for YouTube subtitles (`video.py`)
 - **Frontend:** vanilla HTML/CSS/JS, no build step; videos play in YouTube's own embedded player (IFrame Player API)
 - **LLM:** any OpenAI-compatible API - configured for [Groq](https://groq.com) by default, with a local [Ollama](https://ollama.com) option
 - **Phonetics:** [eSpeak NG](https://github.com/espeak-ng/espeak-ng) via [phonemizer](https://github.com/bootphon/phonemizer)
-- **Storage:** flat files on disk (`texts/` + a JSON index), no database - PDFs are kept as the original file; EPUB and URL imports are stored as structured blocks (heading/paragraph/list-item/table-row/image + styled text runs) in JSON, and the pictures of a URL import are kept as files next to it (`texts/<id>.images/`); plain `.txt` uploads are stored as-is; video imports store only the subtitle cues (start, end, text) and the video id - the video itself is never downloaded
+- **Storage:** flat files on disk (`texts/` + a JSON index), no database - PDFs and EPUBs are kept as the original file; URL imports are stored as structured blocks (heading/paragraph/list-item/table-row/image + styled text runs) in JSON, and the pictures of a URL import are kept as files next to it (`texts/<id>.images/`); video imports store only the subtitle cues (start, end, text) and the video id - the video itself is never downloaded
 
 ## Setup
 
@@ -75,10 +75,10 @@ pip install -U "yt-dlp[default]"
 
 ## Notes
 
-- PDFs are stored as-is and rendered on request, so no re-upload is needed to pick up reader improvements. EPUB/TXT/URL imports are still converted at upload time; re-import those if the extraction logic changes.
+- PDFs and EPUBs are stored as-is and rendered on request, so no re-upload is needed to pick up reader improvements. URL imports are still converted at import time; re-import those if the extraction logic changes. EPUBs uploaded before the paged reader existed were stored as extracted text and still open in the old continuous reader - upload them again to get pages, pictures and the rest.
 - PDF layout is reconstructed from the positions of text blocks and pictures, which is a heuristic: typical one-, two- or three-column pages work, but unusual layouts (sidebars, text boxes, complex tables) can come out in the wrong order, and a picture can end up next to a different paragraph than in the original. Tiny pictures (ornaments, icons) and page-sized ones with text on top (backgrounds, scans) are skipped on purpose.
 - Vector graphics (charts and diagrams drawn with lines, drawn tables, decorative rules) aren't shown - only embedded pictures are. Mathematical formulas aren't handled either: they come out as loose, reordered symbols, so PDFs with a lot of math (textbooks, papers) don't read well.
-- Selecting text near the very end of a PDF page won't pull in context from the next page even if the sentence continues there - context stays within the block/page it started in.
+- The context sent with a selection is the sentence around it. When that sentence starts on the previous page or runs on to the next one (or across a picture or a footnote), the missing part is taken from there - one paragraph each way at most; running headers, page numbers and footnotes in between are skipped. In EPUBs this works within a chapter.
 - Pictures of a URL import are downloaded when you import: up to 25 per article, JPEG/PNG/GIF/WebP only (no SVG), at most 6 MB each; icons, tracking pixels and anything that doesn't look like a real image are skipped, and a picture that can't be fetched is simply left out. Only public addresses are fetched, so a page can't make your machine call things on your local network. Articles imported before this feature have no pictures - re-import them.
 - URL import works well for typical articles, but may fail on JS-heavy pages or paywalled content, since it fetches the raw page rather than rendering it. Section headings are dropped on some sites (Wikipedia notably) - that's the extraction library not finding them, not something fixable on our end.
 - The Groq free tier caps out at 1000 requests/day; hitting the limit surfaces as a message in the UI instead of an error. Results aren't cached, and a video invites many more selections than a book does, so the limit is reached sooner.

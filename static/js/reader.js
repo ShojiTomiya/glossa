@@ -3,7 +3,12 @@ import { readerView, readerContent, bookmarkJumpBtn } from "./dom.js";
 import { extractSentenceContext, globalTextOffset } from "./context.js";
 import { handleTextSelection } from "./selection.js";
 
-// Continuous reader for TXT, EPUB and URL imports.
+// Continuous reader for URL imports (and EPUBs uploaded before the paged reader, book.js).
+
+// The clickable line bookmark (a dot beside each line). Switched off: the
+// reading position is now remembered by itself (see "Reading position"
+// below), which made it redundant. true brings it back.
+const BOOKMARKS_ENABLED = false;
 
 let currentBookmarkLine = null;
 
@@ -13,12 +18,12 @@ function bookmarkKey(textId) {
   return `lexplain-bookmark-${textId}`;
 }
 
-export function loadBookmark(textId) {
+function loadBookmark(textId) {
   const v = localStorage.getItem(bookmarkKey(textId));
   return v === null ? null : parseInt(v, 10);
 }
 
-export function setBookmark(lineIndex) {
+function setBookmark(lineIndex) {
   const prevDot = readerContent.querySelector(".bookmark-dot.active");
   if (prevDot) prevDot.classList.remove("active");
 
@@ -34,6 +39,17 @@ export function setBookmark(lineIndex) {
   updateBookmarkButton();
 }
 
+function bookmarkDot(lineIndex) {
+  const dot = document.createElement("span");
+  dot.className = "bookmark-dot";
+  dot.title = "Bookmark this line";
+  dot.addEventListener("click", (e) => {
+    e.stopPropagation();
+    toggleBookmark(lineIndex);
+  });
+  return dot;
+}
+
 function toggleBookmark(lineIndex) {
   setBookmark(currentBookmarkLine === lineIndex ? null : lineIndex);
 }
@@ -41,7 +57,7 @@ function toggleBookmark(lineIndex) {
 // Shows an up/down arrow pointing toward the bookmarked line when it's
 // scrolled out of view, and hides the button entirely once it's on screen.
 function updateBookmarkButton() {
-  if (readerView.style.display !== "block" || currentBookmarkLine === null) {
+  if (!BOOKMARKS_ENABLED || readerView.style.display !== "block" || currentBookmarkLine === null) {
     bookmarkJumpBtn.classList.add("hidden");
     return;
   }
@@ -71,6 +87,7 @@ window.addEventListener(
     requestAnimationFrame(() => {
       bookmarkScrollScheduled = false;
       updateBookmarkButton();
+      scheduleSavePosition();
     });
   },
   { passive: true }
@@ -82,6 +99,69 @@ bookmarkJumpBtn.addEventListener("click", () => {
   if (lineDiv) lineDiv.scrollIntoView({ behavior: "smooth", block: "center" });
 });
 
+/* ---------- Reading position ---------- */
+
+// Kept as the index of the first line at the top of the screen, not a scroll
+// offset, so it still points at the same text after a font size change.
+
+let readerLines = []; // the .reader-line elements, in order
+let savePositionTimer = null;
+
+function positionKey(textId) {
+  return `lexplain-position-${textId}`;
+}
+
+function topbarHeight() {
+  return document.getElementById("topbar").offsetHeight;
+}
+
+// Binary search: the lines are in order, so this stays cheap for a whole book.
+function firstVisibleLine() {
+  const top = topbarHeight();
+  let lo = 0;
+  let hi = readerLines.length - 1;
+  let found = 0;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (readerLines[mid].getBoundingClientRect().bottom > top) {
+      found = mid;
+      hi = mid - 1;
+    } else {
+      lo = mid + 1;
+    }
+  }
+  return found;
+}
+
+function scheduleSavePosition() {
+  if (!state.currentText || readerContent.classList.contains("hidden") || !readerLines.length) return;
+  const textId = state.currentText.id;
+  clearTimeout(savePositionTimer);
+  savePositionTimer = setTimeout(() => {
+    if (!state.currentText || state.currentText.id !== textId || readerContent.classList.contains("hidden")) return;
+    const line = firstVisibleLine();
+    if (line > 0) localStorage.setItem(positionKey(textId), String(line));
+    else localStorage.removeItem(positionKey(textId));
+  }, 400);
+}
+
+// After rendering a text: back to where reading stopped (or the bookmark,
+// when bookmarks are on).
+export function restoreReaderPosition(textId) {
+  readerLines = [...readerContent.querySelectorAll(".reader-line")];
+  if (BOOKMARKS_ENABLED) {
+    setBookmark(loadBookmark(textId));
+    return;
+  }
+  const line = parseInt(localStorage.getItem(positionKey(textId)), 10);
+  const el = Number.isFinite(line) ? readerLines[line] : null;
+  if (el) {
+    window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - topbarHeight());
+  } else {
+    window.scrollTo(0, 0);
+  }
+}
+
 // The video branch of openText(): no line bookmark while a video is open.
 export function forgetBookmark() {
   currentBookmarkLine = null;
@@ -89,42 +169,9 @@ export function forgetBookmark() {
 
 /* ---------- Rendering ---------- */
 
-export function renderReaderContent(content) {
-  readerContent.innerHTML = "";
-  const lines = content.split("\n");
-  lines.forEach((line, i) => {
-    const lineDiv = document.createElement("div");
-    lineDiv.className = "reader-line";
-    lineDiv.dataset.lineIndex = i;
-
-    const dot = document.createElement("span");
-    dot.className = "bookmark-dot";
-    dot.title = "Bookmark this line";
-    dot.addEventListener("click", (e) => {
-      e.stopPropagation();
-      toggleBookmark(i);
-    });
-    lineDiv.appendChild(dot);
-
-    const textSpan = document.createElement("span");
-    textSpan.className = "reader-line-text";
-    textSpan.textContent = line;
-    lineDiv.appendChild(textSpan);
-
-    readerContent.appendChild(lineDiv);
-
-    if (i < lines.length - 1) {
-      const sep = document.createElement("span");
-      sep.className = "line-sep";
-      sep.textContent = "\n";
-      readerContent.appendChild(sep);
-    }
-  });
-}
-
-// Same DOM shape as renderReaderContent (so bookmarks/selection/context work
-// identically) but built from EPUB blocks — {kind, level?, runs} — instead
-// of splitting a flat string, so headings and inline italic/bold survive.
+// One line per block — {kind, level?, runs} — so headings and inline
+// italic/bold survive; the lines are what bookmarks and the reading position
+// point at.
 export function renderReaderBlocks(blocks) {
   readerContent.innerHTML = "";
   blocks.forEach((block, i) => {
@@ -139,14 +186,7 @@ export function renderReaderBlocks(blocks) {
       lineDiv.classList.add("table-row");
     }
 
-    const dot = document.createElement("span");
-    dot.className = "bookmark-dot";
-    dot.title = "Bookmark this line";
-    dot.addEventListener("click", (e) => {
-      e.stopPropagation();
-      toggleBookmark(i);
-    });
-    lineDiv.appendChild(dot);
+    if (BOOKMARKS_ENABLED) lineDiv.appendChild(bookmarkDot(i));
 
     if (block.kind === "image") {
       // A picture kept with the article (see images.py); the caption is real

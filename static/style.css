@@ -414,6 +414,100 @@ button, input, select {
   text-align: center;
 }
 
+/* EPUB reader (book.js): a chapter in CSS columns one page wide and tall;
+   book.js sets the sizes and shifts #book-content by whole pages. */
+#book-reader {
+  padding: 28px 40px 36px;
+  font-family: var(--reader-font-family);
+  font-size: var(--reader-font-size);
+  line-height: 1.6;
+}
+
+#book-reader.hidden {
+  display: none;
+}
+
+#book-viewport {
+  max-width: 70ch;
+  margin: 0 auto;
+  overflow: hidden;
+  overflow: clip; /* not even scrollable from script: see book.js */
+}
+
+#book-content {
+  column-fill: auto;
+  user-select: text;
+}
+
+#book-content .pblock {
+  margin: 0 0 0.8em;
+}
+
+#book-content .eheading {
+  break-inside: avoid;
+  break-after: avoid;
+}
+
+/* A picture never splits over two pages and stays with its caption; one too
+   big for a page is scaled down to fit (standard reader behaviour: one that
+   doesn't fit in what's left of a page moves to the next one). */
+.efigure {
+  break-inside: avoid;
+  margin: 0.4em 0 1em;
+  text-align: center;
+}
+
+/* The room left for the caption (and the figure's margins) keeps a picture
+   with its caption within one page, which break-inside needs to work. */
+#book-content .efigure .pimage {
+  height: auto;
+  max-width: 100%;
+  max-height: calc(var(--page-h, 80vh) - 2.5em);
+  margin: 0 auto;
+  object-fit: contain;
+}
+
+#book-content .efigure-captioned .pimage {
+  max-height: calc(var(--page-h, 80vh) - 7em);
+}
+
+.ecaption {
+  margin: 0.5em 0 0;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+/* EPUB blocks, with the PDF block classes. */
+.eheading {
+  margin-top: 1.4em;
+  line-height: 1.3;
+}
+
+.eli::before {
+  content: "• ";
+  color: var(--text-muted);
+}
+
+.equote {
+  margin-left: 2em;
+}
+
+.esep {
+  width: 33%;
+  margin: 2em auto;
+  border: none;
+  border-top: 1px solid var(--border);
+}
+
+/* Note references are drawn from data-note, so they're not part of the
+   selectable text. */
+.enote::after {
+  content: attr(data-note);
+  font-size: 0.75em;
+  color: var(--text-muted);
+  padding-left: 1px;
+}
+
 .pimage {
   display: block;
   max-width: 100%;

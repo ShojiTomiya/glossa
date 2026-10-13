@@ -6,3 +6,4 @@ texts/*.pdf
 texts/*.json
 texts/*.images
 .DS_Store
+texts/*.epub

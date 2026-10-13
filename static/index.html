@@ -51,7 +51,6 @@
         <option value="epub">EPUB</option>
         <option value="url">Article</option>
         <option value="video">Video</option>
-        <option value="text">Text</option>
       </select>
     </label>
     <button id="upload-open-btn" class="btn btn-sm btn-primary">Upload</button>
@@ -65,6 +64,12 @@
 
   <div id="pdf-reader" class="hidden">
     <div id="pdf-page"></div>
+  </div>
+
+  <div id="book-reader" class="hidden">
+    <div id="book-viewport">
+      <div id="book-content"></div>
+    </div>
   </div>
 
   <div id="video-reader" class="hidden">
@@ -90,8 +95,8 @@
   </div>
   <form id="upload-form">
     <label class="field-block" id="file-field">
-      File (.pdf, .epub or .txt)
-      <input type="file" id="file-input" accept=".pdf,.epub,.txt" required>
+      File (.pdf or .epub)
+      <input type="file" id="file-input" accept=".pdf,.epub" required>
     </label>
     <label class="field-block hidden" id="url-field">
       <span id="url-field-label">Article URL</span>

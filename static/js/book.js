@@ -1,0 +1,313 @@
+import { state } from "./state.js";
+import { pdfPrevBtn, pdfNextBtn, pdfPageIndicator, bookReader, bookViewport, bookContent } from "./dom.js";
+import { hidePopup, handleTextSelection } from "./selection.js";
+import { appendRuns } from "./reader.js";
+import { getPdfContext } from "./pdf.js";
+
+/* ---------- EPUB reader, laid out in pages ----------
+ *
+ * The server renders a book one chapter at a time (epub_render.py). A chapter
+ * is laid out in CSS columns exactly one page wide and one page tall, so the
+ * browser itself breaks it into pages; turning a page shifts the columns by
+ * one page width. The arrows (shared with the PDF reader) go page by page and
+ * on into the next or previous chapter.
+ *
+ * Page numbers depend on the window and font size, so the position kept is
+ * the chapter and its first block on the page; after a resize, a font change
+ * or reopening the book, the reader goes back to the page holding that block.
+ *
+ * Blocks use the PDF block classes (pblock, muted, bold, pimage), so the PDF
+ * reader's selection context and styles apply to them unchanged.
+ */
+
+const PAGE_GAP = 48; // px between two pages in the column strip
+const HEADING_SIZES = { 1: 1.6, 2: 1.4, 3: 1.2, 4: 1.1, 5: 1, 6: 1 };
+
+let book = null; // {textId, chapter, total, progress, page, pages, step, blockPages}
+let loadToken = 0; // only the latest chapter request may fill the page
+const chapterCache = new Map(); // chapter number -> Promise of its JSON (or null)
+
+function positionKey(textId) {
+  return `lexplain-epub-pos-${textId}`;
+}
+
+function loadPosition(textId) {
+  try {
+    const pos = JSON.parse(localStorage.getItem(positionKey(textId)));
+    if (pos && pos.chapter >= 1 && pos.block >= 0) return pos;
+  } catch (e) {
+    /* nothing stored, or not JSON */
+  }
+  return { chapter: 1, block: 0 };
+}
+
+/* ---------- rendering ---------- */
+
+// A note reference ("12", "*") is drawn by CSS from data-note, so it's not
+// part of the text: selecting "word¹²" gives "word", and the context sent
+// for translation doesn't get the number glued to it.
+function appendBookRuns(el, runs) {
+  for (const run of runs) {
+    if (run.note) {
+      const sup = document.createElement("sup");
+      sup.className = "enote";
+      sup.dataset.note = run.text;
+      el.appendChild(sup);
+    } else {
+      appendRuns(el, [run], false);
+    }
+  }
+}
+
+function renderBookImage(block, textId) {
+  const figure = document.createElement("div");
+  figure.className = "efigure";
+
+  const img = document.createElement("img");
+  img.className = "pimage";
+  const member = block.src.split("/").map(encodeURIComponent).join("/");
+  img.src = `/api/texts/${encodeURIComponent(textId)}/epub-image/${member}`;
+  img.alt = block.alt || "";
+  if (block.width && block.height) {
+    // The size is known before the file arrives, so the page layout doesn't
+    // move when it does. CSS keeps it within the page width and height
+    // (object-fit keeps the picture's proportions when the height is capped).
+    img.style.width = `${block.width}px`;
+    img.style.aspectRatio = `${block.width} / ${block.height}`;
+  } else {
+    img.addEventListener("load", scheduleRelayout);
+  }
+  img.addEventListener("error", () => {
+    img.remove();
+    scheduleRelayout();
+  });
+  figure.appendChild(img);
+
+  if (block.caption && block.caption.length) {
+    figure.classList.add("efigure-captioned");
+    const caption = document.createElement("p");
+    caption.className = "pblock ecaption";
+    caption.style.fontSize = "0.9em";
+    appendBookRuns(caption, block.caption);
+    figure.appendChild(caption);
+  }
+  return figure;
+}
+
+function renderBookBlock(block, textId) {
+  if (block.kind === "image") return renderBookImage(block, textId);
+  if (block.kind === "separator") {
+    const hr = document.createElement("hr");
+    hr.className = "esep";
+    return hr;
+  }
+
+  const el = document.createElement(block.kind === "heading" ? "div" : "p");
+  el.className = "pblock";
+  // looksLikeBodyParagraph() (pdf.js) reads the size from the inline style.
+  let size = 1;
+  if (block.kind === "heading") {
+    el.classList.add("bold", "eheading");
+    size = HEADING_SIZES[block.level] || 1;
+  } else if (block.small) {
+    el.classList.add("muted");
+    size = 0.85;
+  }
+  el.style.fontSize = `${size}em`;
+  if (block.align) el.style.textAlign = block.align;
+  if (block.kind === "list-item") el.classList.add("eli");
+  if (block.quote) el.classList.add("equote");
+  if (block.pre) el.style.whiteSpace = "pre-wrap";
+
+  appendBookRuns(el, block.runs || []);
+  return el;
+}
+
+/* ---------- pages ---------- */
+
+// Sizes the column strip to the space under the topbar and works out how many
+// pages the chapter takes and on which page each block starts.
+function layout() {
+  const topbar = document.getElementById("topbar");
+  const styles = getComputedStyle(bookReader);
+  const padding = parseFloat(styles.paddingTop) + parseFloat(styles.paddingBottom);
+  const height = Math.max(200, Math.floor(window.innerHeight - topbar.offsetHeight - padding));
+  const width = bookViewport.clientWidth;
+
+  bookViewport.style.height = `${height}px`;
+  bookContent.style.height = `${height}px`;
+  bookContent.style.width = `${width}px`;
+  bookContent.style.columnWidth = `${width}px`;
+  bookContent.style.columnGap = `${PAGE_GAP}px`;
+  bookContent.style.setProperty("--page-h", `${height}px`);
+
+  book.step = width + PAGE_GAP;
+  const origin = bookContent.getBoundingClientRect().left;
+  const pageOf = (x) => Math.max(0, Math.floor((x - origin + 1) / book.step));
+  const blocks = [...bookContent.children];
+  book.blockPages = blocks.map((el) => pageOf(el.getBoundingClientRect().left));
+
+  // The last block may run on over several pages: its last fragment ends the chapter.
+  let lastRight = origin;
+  const last = blocks[blocks.length - 1];
+  if (last) for (const rect of last.getClientRects()) lastRight = Math.max(lastRight, rect.right);
+  book.pages = Math.max(1, pageOf(lastRight - 2) + 1, Math.round((bookContent.scrollWidth + PAGE_GAP) / book.step));
+}
+
+// The block the page is "at": the first one starting on it, or the one
+// running over it from an earlier page.
+function blockOnPage() {
+  if (!book || !book.blockPages.length) return 0;
+  const first = book.blockPages.findIndex((p) => p === book.page);
+  if (first !== -1) return first;
+  let before = 0;
+  book.blockPages.forEach((p, i) => {
+    if (p < book.page) before = i;
+  });
+  return before;
+}
+
+function updateIndicator() {
+  // How far into the book, from the chapters' lengths: no chapter or page
+  // numbers, which change with the window and font size anyway.
+  const { before, share } = book.progress || { before: 0, share: 0 };
+  const percent = Math.min(100, Math.round((before + share * ((book.page + 1) / book.pages)) * 100));
+  pdfPageIndicator.textContent = `${percent}%`;
+  pdfPrevBtn.disabled = book.chapter <= 1 && book.page <= 0;
+  pdfNextBtn.disabled = book.chapter >= book.total && book.page >= book.pages - 1;
+}
+
+function setPage(page) {
+  book.page = Math.min(Math.max(0, page), book.pages - 1);
+  bookContent.style.transform = `translateX(${-book.page * book.step}px)`;
+  updateIndicator();
+  localStorage.setItem(positionKey(book.textId), JSON.stringify({ chapter: book.chapter, block: blockOnPage() }));
+  hidePopup();
+  window.getSelection().removeAllRanges();
+}
+
+let relayoutTimer = null;
+
+function scheduleRelayout() {
+  clearTimeout(relayoutTimer);
+  relayoutTimer = setTimeout(() => {
+    if (!book || bookReader.classList.contains("hidden")) return;
+    const block = blockOnPage();
+    layout();
+    setPage(book.blockPages[block] ?? 0);
+  }, 120);
+}
+
+/* ---------- chapters ---------- */
+
+function fetchChapter(textId, num) {
+  if (!chapterCache.has(num)) {
+    const request = fetch(`/api/texts/${textId}/epub-chapter/${num}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .catch(() => null);
+    chapterCache.set(num, request);
+    request.then((data) => {
+      if (!data) chapterCache.delete(num); // let a later attempt try again
+    });
+  }
+  return chapterCache.get(num);
+}
+
+// target: {block: n} (a remembered position), {page: 0} or {page: "last"}.
+async function showChapter(textId, num, target) {
+  const token = ++loadToken;
+  const data = await fetchChapter(textId, num);
+  if (token !== loadToken || !state.currentText || state.currentText.id !== textId) return;
+  if (!data) {
+    // e.g. a remembered chapter past the end: start from the beginning instead
+    if (num > 1) return showChapter(textId, 1, { page: 0 });
+    bookContent.replaceChildren();
+    pdfPageIndicator.textContent = "";
+    return;
+  }
+
+  book = { textId, chapter: data.chapter, total: data.total_chapters, progress: data.progress, page: 0, pages: 1 };
+  bookContent.style.transform = "";
+  bookContent.replaceChildren(...data.blocks.map((block) => renderBookBlock(block, textId)));
+  layout();
+  if (target.page === "last") setPage(book.pages - 1);
+  else if (typeof target.block === "number") setPage(book.blockPages[Math.min(target.block, book.blockPages.length - 1)] ?? 0);
+  else setPage(target.page || 0);
+
+  // The neighbours, so turning into them doesn't wait for the server.
+  if (book.chapter < book.total) fetchChapter(textId, book.chapter + 1);
+  if (book.chapter > 1) fetchChapter(textId, book.chapter - 1);
+}
+
+export function showBookLoading() {
+  const p = document.createElement("p");
+  p.className = "pdf-loading";
+  p.textContent = "Loading…";
+  bookContent.style.transform = "";
+  bookContent.replaceChildren(p);
+  pdfPageIndicator.textContent = "";
+}
+
+export async function openBook(textId) {
+  chapterCache.clear();
+  book = null;
+  const pos = loadPosition(textId);
+  await showChapter(textId, pos.chapter, { block: pos.block });
+}
+
+export function closeBook() {
+  loadToken++;
+  book = null;
+  chapterCache.clear();
+  bookContent.replaceChildren();
+  bookContent.style.transform = "";
+}
+
+function isOpenBook() {
+  return book && state.currentText && state.currentText.id === book.textId && !bookReader.classList.contains("hidden");
+}
+
+function nextPage() {
+  if (!isOpenBook()) return;
+  if (book.page < book.pages - 1) setPage(book.page + 1);
+  else if (book.chapter < book.total) showChapter(book.textId, book.chapter + 1, { page: 0 });
+}
+
+function previousPage() {
+  if (!isOpenBook()) return;
+  if (book.page > 0) setPage(book.page - 1);
+  else if (book.chapter > 1) showChapter(book.textId, book.chapter - 1, { page: "last" });
+}
+
+/* ---------- listeners ---------- */
+
+pdfNextBtn.addEventListener("click", nextPage);
+pdfPrevBtn.addEventListener("click", previousPage);
+
+document.addEventListener("keydown", (e) => {
+  if (!isOpenBook() || e.altKey || e.ctrlKey || e.metaKey) return;
+  if (document.querySelector("dialog[open]") || e.target.closest("input, select, textarea")) return;
+  if (e.key === "ArrowRight" || e.key === "PageDown") nextPage();
+  else if (e.key === "ArrowLeft" || e.key === "PageUp") previousPage();
+  else return;
+  e.preventDefault();
+});
+
+window.addEventListener("resize", scheduleRelayout);
+document.addEventListener("glossa:settings", scheduleRelayout);
+
+// overflow: clip should already prevent it, but if a browser scrolls the
+// page window anyway (dragging a selection past its edge), undo that: the
+// position is only ever set through the transform.
+bookViewport.addEventListener("scroll", () => {
+  bookViewport.scrollLeft = 0;
+  bookViewport.scrollTop = 0;
+});
+
+bookContent.addEventListener("mouseup", () => {
+  const selection = window.getSelection();
+  const phrase = selection.toString().trim();
+  if (!phrase || selection.rangeCount === 0) return;
+  const range = selection.getRangeAt(0);
+  handleTextSelection(phrase, getPdfContext(range), range.getBoundingClientRect());
+});

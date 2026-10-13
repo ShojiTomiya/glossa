@@ -1,16 +1,11 @@
 const LANG_NAMES = { de: "German", es: "Spanish", it: "Italian", fr: "French", en: "English", pl: "Polish" };
 
 // Same names as the type filter in index.html.
-const KIND_NAMES = { pdf: "PDF", epub: "EPUB", url: "Article", video: "Video", text: "Text" };
+const KIND_NAMES = { pdf: "PDF", epub: "EPUB", url: "Article", video: "Video" };
 
 const textList = document.getElementById("text-list");
 const filterLangSelect = document.getElementById("filter-lang-select");
 const filterKindSelect = document.getElementById("filter-kind-select");
-
-// Entries saved before "kind" existed are all plain text (see storage.py).
-function kindOf(entry) {
-  return entry.kind || "text";
-}
 
 const uploadDialog = document.getElementById("upload-dialog");
 const uploadOpenBtn = document.getElementById("upload-open-btn");
@@ -48,7 +43,7 @@ export async function loadLibrary() {
 function renderLibrary() {
   const lang = filterLangSelect.value;
   const kind = filterKindSelect.value;
-  const texts = allTexts.filter((t) => (!lang || t.source_lang === lang) && (!kind || kindOf(t) === kind));
+  const texts = allTexts.filter((t) => (!lang || t.source_lang === lang) && (!kind || t.kind === kind));
 
   textList.innerHTML = "";
   for (const t of texts) {
@@ -64,8 +59,8 @@ function renderLibrary() {
     label.appendChild(badge);
     const kindBadge = document.createElement("span");
     kindBadge.className = "text-kind-badge";
-    kindBadge.textContent = KIND_NAMES[kindOf(t)] || kindOf(t);
-    if (kindOf(t) === "video" && t.subtitle_source === "auto") kindBadge.textContent += " · auto subs";
+    kindBadge.textContent = KIND_NAMES[t.kind] || t.kind;
+    if (t.kind === "video" && t.subtitle_source === "auto") kindBadge.textContent += " · auto subs";
     label.appendChild(kindBadge);
 
     const actions = document.createElement("span");

@@ -31,6 +31,34 @@ export function sentenceRunsOffEnd(fullText, end) {
   return i >= fullText.length;
 }
 
+// The mirror image: true if no `.`/`!`/`?` comes before `start`, i.e. the
+// sentence may have begun before `fullText` does.
+export function sentenceRunsOffStart(fullText, start) {
+  for (let i = start - 1; i >= 0; i--) {
+    if (SENTENCE_BOUNDARY.test(fullText[i])) return false;
+  }
+  return true;
+}
+
+// Whether `text` ends a sentence: a terminator, possibly followed by closing
+// quotes or brackets.
+export function endsSentence(text) {
+  return /[.!?…]["'»”’)\]]*$/.test(text.trim());
+}
+
+// Joins two pieces of text that a page or block break separated. A word
+// hyphenated across the break ("acomo-" + "dada") is joined back together.
+// Returns the joined text and the offset that maps a position in `b` to one
+// in the joined text (whitespace at the seam is dropped, so it can be off by
+// the trimmed amount for positions inside that whitespace only).
+export function joinText(a, b) {
+  const left = a.replace(/\s+$/, "");
+  const lead = b.length - b.replace(/^\s+/, "").length;
+  const right = b.slice(lead);
+  if (/\p{L}-$/u.test(left) && /^\p{Ll}/u.test(right)) return [left.slice(0, -1) + right, left.length - 1 - lead];
+  return [`${left} ${right}`, left.length + 1 - lead];
+}
+
 // range.startOffset/endOffset are local to their text node, not global to
 // `root` (which contains many text nodes) — walk the tree to translate a
 // node-local offset into an offset global to `root`.

@@ -9,10 +9,11 @@ from pydantic import BaseModel
 import storage
 import llm
 import pdf_render
+import epub_render
 import video
 import images
 from config import LANGUAGES
-from extract import extract_epub_blocks, extract_url_blocks
+from extract import extract_url_blocks
 
 app = FastAPI()
 
@@ -65,22 +66,18 @@ async def upload(file: UploadFile, title: str = Form(...), source_lang: str = Fo
         entry = storage.save_pdf(title, source_lang, raw)
         return entry
     elif suffix == ".epub":
+        # Kept as uploaded and rendered chapter by chapter (see epub_render.py);
+        # here only a check that it opens and has text.
         with tempfile.NamedTemporaryFile(suffix=".epub") as tmp:
             tmp.write(raw)
             tmp.flush()
             try:
-                blocks = extract_epub_blocks(tmp.name)
-            except ValueError as e:
+                epub_render.inspect(tmp.name)
+            except epub_render.EpubError as e:
                 raise HTTPException(400, str(e))
-        entry = storage.save_blocks(title, source_lang, blocks)
+        entry = storage.save_epub(title, source_lang, raw)
         return entry
-    elif suffix == ".txt":
-        content = raw.decode("utf-8", errors="replace")
-    else:
-        raise HTTPException(400, f"Unsupported file type '{suffix}'. Use .pdf, .epub or .txt.")
-
-    entry = storage.save_text(title, source_lang, content)
-    return entry
+    raise HTTPException(400, f"Unsupported file type '{suffix}'. Use .pdf or .epub.")
 
 
 @app.post("/api/import-url")
@@ -160,6 +157,30 @@ def get_pdf_image(text_id: str, page_num: int, index: int):
     except ValueError as e:
         raise HTTPException(404, str(e))
     # The PDF never changes, but how it's rendered might: a day, not forever.
+    return Response(data, media_type=media_type, headers={"Cache-Control": "public, max-age=86400",
+                                                          "X-Content-Type-Options": "nosniff"})
+
+
+@app.get("/api/texts/{text_id}/epub-chapter/{chapter}")
+def get_epub_chapter(text_id: str, chapter: int):
+    path = storage.get_epub_path(text_id)
+    if path is None:
+        raise HTTPException(404, "EPUB not found")
+    try:
+        return epub_render.render_chapter(str(path), chapter)
+    except epub_render.EpubError as e:
+        raise HTTPException(404, str(e))
+
+
+@app.get("/api/texts/{text_id}/epub-image/{member:path}")
+def get_epub_image(text_id: str, member: str):
+    path = storage.get_epub_path(text_id)
+    if path is None:
+        raise HTTPException(404, "EPUB not found")
+    try:
+        data, media_type = epub_render.read_image(str(path), member)
+    except epub_render.EpubError as e:
+        raise HTTPException(404, str(e))
     return Response(data, media_type=media_type, headers={"Cache-Control": "public, max-age=86400",
                                                           "X-Content-Type-Options": "nosniff"})
 

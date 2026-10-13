@@ -1,14 +1,15 @@
 import { state } from "./state.js";
 import {
   brand, topbarReaderActions, libraryView, readerView, readerTitle, readerContent, targetLangSelect, backBtn,
-  bookmarkJumpBtn, pdfReader, pdfPage, pdfPrevBtn, pdfNextBtn, pdfPageIndicator,
+  bookmarkJumpBtn, pdfReader, pdfPage, pdfPrevBtn, pdfNextBtn, pdfPageIndicator, bookReader,
 } from "./dom.js";
 import "./settings.js";
 import { initLibrary, loadLibrary } from "./library.js";
-import { renderReaderContent, renderReaderBlocks, setBookmark, loadBookmark, forgetBookmark } from "./reader.js";
+import { renderReaderBlocks, restoreReaderPosition, forgetBookmark } from "./reader.js";
 import { hidePopup } from "./selection.js";
 import "./explain.js";
 import { loadPdfPage, loadPdfPageNum, showPdfLoading } from "./pdf.js";
+import { openBook, closeBook, showBookLoading } from "./book.js";
 import { openVideo } from "./video.js";
 
 /* ---------- Opening an item / back to the library ---------- */
@@ -16,6 +17,14 @@ import { openVideo } from "./video.js";
 // Bumped on every open/back. A slow response for an item opened earlier must
 // not replace the one opened since (two clicks in the library in a row).
 let openToken = 0;
+
+// Shows one of the readers (null: none, the video reader handles itself) and
+// whether the page arrows / position indicator are used.
+function showReader(reader, arrows) {
+  for (const el of [readerContent, pdfReader, bookReader]) el.classList.toggle("hidden", el !== reader);
+  for (const el of [pdfPrevBtn, pdfNextBtn, pdfPageIndicator]) el.classList.toggle("hidden", !arrows);
+  bookmarkJumpBtn.classList.add("hidden");
+}
 
 async function openText(id) {
   const token = ++openToken;
@@ -37,39 +46,27 @@ async function openText(id) {
   hidePopup();
 
   if (state.currentText.kind === "video") {
-    readerContent.classList.add("hidden");
-    pdfReader.classList.add("hidden");
-    pdfPrevBtn.classList.add("hidden");
-    pdfNextBtn.classList.add("hidden");
-    pdfPageIndicator.classList.add("hidden");
-    bookmarkJumpBtn.classList.add("hidden");
+    showReader(null, false);
     forgetBookmark();
     window.scrollTo(0, 0);
     openVideo(state.currentText);
     return;
   }
 
-  if (state.currentText.kind === "pdf") {
-    readerContent.classList.add("hidden");
-    pdfReader.classList.remove("hidden");
-    bookmarkJumpBtn.classList.add("hidden");
-    pdfPrevBtn.classList.remove("hidden");
-    pdfNextBtn.classList.remove("hidden");
-    pdfPageIndicator.classList.remove("hidden");
+  // EPUBs uploaded before epub_render.py come with their blocks and use the text reader below.
+  if (state.currentText.kind === "epub" && !state.currentText.blocks) {
+    showReader(bookReader, true);
+    window.scrollTo(0, 0);
+    showBookLoading();
+    await openBook(state.currentText.id);
+  } else if (state.currentText.kind === "pdf") {
+    showReader(pdfReader, true);
     showPdfLoading();
     await loadPdfPage(state.currentText.id, loadPdfPageNum(state.currentText.id));
   } else {
-    pdfReader.classList.add("hidden");
-    pdfPrevBtn.classList.add("hidden");
-    pdfNextBtn.classList.add("hidden");
-    pdfPageIndicator.classList.add("hidden");
-    readerContent.classList.remove("hidden");
-    if (state.currentText.kind === "epub" || state.currentText.kind === "url") {
-      renderReaderBlocks(state.currentText.blocks);
-    } else {
-      renderReaderContent(state.currentText.content);
-    }
-    setBookmark(loadBookmark(state.currentText.id));
+    showReader(readerContent, false);
+    renderReaderBlocks(state.currentText.blocks);
+    restoreReaderPosition(state.currentText.id);
   }
 }
 
@@ -80,6 +77,7 @@ backBtn.addEventListener("click", () => {
   readerTitle.textContent = "";
   readerContent.replaceChildren();
   pdfPage.replaceChildren();
+  closeBook();
   pdfPageIndicator.textContent = "";
   hidePopup();
   readerView.style.display = "none";

@@ -1,5 +1,5 @@
 import { state } from "./state.js";
-import { readerContent, pdfPage, popup, popupTranslation, explainPanel, targetLangSelect } from "./dom.js";
+import { readerContent, pdfPage, bookContent, popup, popupTranslation, explainPanel, targetLangSelect } from "./dom.js";
 
 /* ---------- Selection popup ---------- */
 
@@ -55,7 +55,7 @@ export async function handleTextSelection(phrase, context, rect) {
 }
 
 document.addEventListener("mousedown", (e) => {
-  const inSelectableArea = readerContent.contains(e.target) || pdfPage.contains(e.target);
+  const inSelectableArea = [readerContent, pdfPage, bookContent].some((area) => area.contains(e.target));
   if (!popup.contains(e.target) && !inSelectableArea) {
     hidePopup();
   }

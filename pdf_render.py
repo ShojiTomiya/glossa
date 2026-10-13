@@ -175,9 +175,10 @@ def _order_band(blocks: list, text_width: float, columns: list) -> list:
     return ordered
 
 
-def _reading_order(blocks: list, page_h: float, text_width: float) -> tuple[list, list]:
-    # Returns the text blocks in reading order, plus the columns found
-    # ({"box", "blocks"}), which decide where pictures inside a column go.
+def _reading_order(blocks: list, page_h: float, text_width: float) -> tuple[list, list, set]:
+    # Returns the text blocks in reading order, the columns found
+    # ({"box", "blocks"}), which decide where pictures inside a column go,
+    # and the ids of the running header/footer blocks.
 
     def by_position(b):
         return b["bbox"][1], b["bbox"][0]
@@ -203,7 +204,7 @@ def _reading_order(blocks: list, page_h: float, text_width: float) -> tuple[list
         if i < len(wide):
             ordered.append(wide[i])
     ordered.extend(sorted(footer, key=by_position))
-    return ordered, columns
+    return ordered, columns, edge
 
 
 def _is_content_image(block: dict, page, texts: list) -> bool:
@@ -361,7 +362,7 @@ def render_page(path: str, page_num: int) -> dict:
         # PyMuPDF's own block order follows the file, which isn't always the
         # reading order (headers/footers especially), so it's rebuilt from
         # the layout — column by column where the page has columns.
-        ordered, columns = _reading_order(texts, page.rect.height, text_width)
+        ordered, columns, edge = _reading_order(texts, page.rect.height, text_width)
 
         seen = set()
         content_pictures = []
@@ -381,8 +382,13 @@ def render_page(path: str, page_num: int) -> dict:
         blocks_out = []
         for pos, block in enumerate(ordered):
             blocks_out.extend(placed.get(pos, []))
-            blocks_out.append(_text_block_data(block, page_num, column_area.get(id(block), page_area),
-                                               body_size, id(block) in wrapped))
+            data = _text_block_data(block, page_num, column_area.get(id(block), page_area), body_size,
+                                    id(block) in wrapped)
+            # Running header/footer (title, page number): the reader skips it when a
+            # sentence's context continues onto the previous or next page.
+            if id(block) in edge:
+                data["edge"] = True
+            blocks_out.append(data)
         blocks_out.extend(placed.get(len(ordered), []))
 
         return {"page": page_num, "total_pages": len(doc), "blocks": blocks_out}
