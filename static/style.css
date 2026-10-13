@@ -409,6 +409,11 @@ button, input, select {
   margin: 0 0 1em;
 }
 
+.pdf-loading {
+  color: var(--text-muted);
+  text-align: center;
+}
+
 .pimage {
   display: block;
   max-width: 100%;
