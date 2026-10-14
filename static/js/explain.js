@@ -1,6 +1,7 @@
 import { state } from "./state.js";
 import { explainBtn, explainPanel, targetLangSelect } from "./dom.js";
 import { selectionToken, errorText } from "./selection.js";
+import { canSpeak, speakButton } from "./speech.js";
 
 explainBtn.addEventListener("click", async () => {
   if (!state.currentSelection) return;
@@ -37,6 +38,7 @@ explainBtn.addEventListener("click", async () => {
 
 function renderExplain(data) {
   explainPanel.innerHTML = "";
+  const lang = state.currentText.source_lang;
 
   if (data.explanation) {
     const explanation = document.createElement("p");
@@ -65,6 +67,8 @@ function renderExplain(data) {
       const phonetic = document.createElement("td");
       phonetic.className = "word-phonetic";
       phonetic.textContent = w.phonetic || "";
+      // Reads the same form the IPA was made from (w.text, see phonetics.py).
+      if (w.text && canSpeak(lang)) phonetic.appendChild(speakButton(w.text, lang));
       row.appendChild(phonetic);
 
       const translation = document.createElement("td");

@@ -712,6 +712,21 @@ dialog select {
   padding-right: 10px !important;
 }
 
+/* Listen button after the IPA (speech.js). */
+.speak-btn {
+  border: none;
+  background: none;
+  padding: 0 0 0 5px;
+  color: var(--text-muted);
+  cursor: pointer;
+  vertical-align: -2px;
+  line-height: 1;
+}
+
+.speak-btn:hover {
+  color: var(--accent);
+}
+
 .word-translation {
   padding-right: 10px !important;
 }
