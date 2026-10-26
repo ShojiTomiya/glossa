@@ -1,4 +1,4 @@
-const LANG_NAMES = { de: "German", es: "Spanish", it: "Italian", fr: "French", en: "English", pl: "Polish" };
+import { languageName } from "./languages.js";
 
 // Same names as the type filter in index.html.
 const KIND_NAMES = { pdf: "PDF", epub: "EPUB", url: "Article", video: "Video" };
@@ -55,7 +55,7 @@ function renderLibrary() {
 
     const badge = document.createElement("span");
     badge.className = "text-lang-badge";
-    badge.textContent = LANG_NAMES[t.source_lang] || t.source_lang.toUpperCase();
+    badge.textContent = languageName(t.source_lang);
     label.appendChild(badge);
     const kindBadge = document.createElement("span");
     kindBadge.className = "text-kind-badge";

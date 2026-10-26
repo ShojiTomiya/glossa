@@ -1,9 +1,12 @@
 // Pronunciation of single words with the browser's own speech synthesis
 // (the system's voices: no server, no LLM quota, works offline).
 
-// The region matches the eSpeak voices the IPA comes from (config.py), so
-// e.g. English is read with an American voice, like its transcription.
-const VOICE_LANGS = { de: "de-DE", es: "es-ES", it: "it-IT", fr: "fr-FR", en: "en-US", pl: "pl-PL" };
+import { speechTag } from "./languages.js";
+
+// The language tags (speechTag, from config.py) have the same region as the
+// eSpeak voices the IPA comes from, so e.g. English is read with an American
+// voice, like its transcription.
+
 // Single words for learning: a little slower than normal speech.
 const RATE = 0.9;
 // macOS novelty voices (singing, whispering, robots), never wanted here.
@@ -27,7 +30,7 @@ const normalise = (tag) => tag.toLowerCase().replace("_", "-");
 // the exact region, then one that runs locally (Chrome's Google voices need
 // the internet).
 function voiceFor(lang) {
-  const tag = normalise(VOICE_LANGS[lang] || lang);
+  const tag = normalise(speechTag(lang));
   const base = tag.split("-")[0];
   const candidates = voices.filter((v) => normalise(v.lang).split("-")[0] === base && !NOVELTY_VOICES.test(v.name));
   if (!candidates.length) return null;
@@ -59,11 +62,11 @@ export function speakButton(text, lang) {
   return button;
 }
 
-export function speak(text, lang) {
+function speak(text, lang) {
   if (!synth || !text) return;
   synth.cancel(); // a click while a word is still playing starts the new one
   const utterance = new SpeechSynthesisUtterance(text);
-  utterance.lang = VOICE_LANGS[lang] || lang;
+  utterance.lang = speechTag(lang);
   const voice = voiceFor(lang);
   if (voice) utterance.voice = voice;
   utterance.rate = RATE;

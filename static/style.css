@@ -81,13 +81,13 @@ button, input, select {
   flex: 1;
 }
 
-#pdf-page-indicator {
+#page-indicator {
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
   font-size: 0.9rem;
 }
 
-#pdf-page-indicator.hidden {
+#page-indicator.hidden {
   display: none;
 }
 
@@ -554,7 +554,7 @@ button, input, select {
   gap: 12px;
 }
 
-.pdf-nav-btn {
+.page-nav-btn {
   position: fixed;
   bottom: 24px;
   z-index: 500;
@@ -572,28 +572,28 @@ button, input, select {
   cursor: pointer;
 }
 
-.pdf-nav-btn:hover {
+.page-nav-btn:hover {
   border-color: var(--accent);
 }
 
-.pdf-nav-btn:disabled {
+.page-nav-btn:disabled {
   opacity: 0.35;
   cursor: default;
 }
 
-.pdf-nav-btn:disabled:hover {
+.page-nav-btn:disabled:hover {
   border-color: var(--border);
 }
 
-.pdf-nav-btn.hidden {
+.page-nav-btn.hidden {
   display: none;
 }
 
-.pdf-nav-btn-left {
+.page-nav-btn-left {
   left: 24px;
 }
 
-.pdf-nav-btn-right {
+.page-nav-btn-right {
   right: 24px;
 }
 

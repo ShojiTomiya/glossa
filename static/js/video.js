@@ -1,4 +1,5 @@
 import { handleTextSelection } from "./selection.js";
+import { MAX_CONTEXT_CHARS } from "./context.js";
 
 /* Video mode: YouTube IFrame player + subtitle cues synced to playback.
  *
@@ -15,7 +16,6 @@ import { handleTextSelection } from "./selection.js";
  */
 
 const videoReader = document.getElementById("video-reader");
-const videoStage = document.getElementById("video-stage");
 const videoPlayerBox = document.getElementById("video-player-box");
 const videoError = document.getElementById("video-error");
 const cueList = document.getElementById("cue-list");
@@ -395,11 +395,11 @@ function closeVideo() {
 
 /* ---------- selection -> translate / explain ---------- */
 
-// Subtitles are short (often a single word is selected), so give the model more
-// to go on than a text reader does: this many cues around the selection, up to
-// this many characters (llm.py cuts the context at 800).
+// Subtitles often have no punctuation to find sentences by (auto-generated
+// ones especially), and a cue is often half a sentence, so the context is
+// counted in cues instead: this many around the selection, within the same
+// MAX_CONTEXT_CHARS as the text readers (context.js).
 const CONTEXT_CUES_EACH_SIDE = 4;
-const VIDEO_MAX_CONTEXT_CHARS = 700;
 
 // Context for the LLM: the selected cues plus CONTEXT_CUES_EACH_SIDE on each
 // side, cut to maxChars. When too long, the outermost context cues go first
@@ -490,7 +490,7 @@ function handleVideoSelection() {
   // Pause so the sentence stays put while it is being read.
   if (vs.player && typeof vs.player.pauseVideo === "function") vs.player.pauseVideo();
 
-  const context = buildVideoContext(vs.cues, picked.first, picked.last, VIDEO_MAX_CONTEXT_CHARS);
+  const context = buildVideoContext(vs.cues, picked.first, picked.last, MAX_CONTEXT_CHARS);
   handleTextSelection(picked.phrase, context, range.getBoundingClientRect());
 }
 

@@ -22,16 +22,6 @@ IMAGE_FULL_WIDTH_PX = 1800
 IMAGE_MAX_PX = 2400
 
 
-def get_page_count(path: str) -> int:
-    with fitz.open(path) as doc:
-        return len(doc)
-
-
-def has_extractable_text(path: str) -> bool:
-    with fitz.open(path) as doc:
-        return any(page.get_text().strip() for page in doc)
-
-
 def _lines_same_row(a: dict, b: dict) -> bool:
 
     ay0, ay1 = a["bbox"][1], a["bbox"][3]
@@ -64,15 +54,11 @@ def _runs(spans: list, block_italic: bool) -> list[dict]:
     ]
 
 
-_metrics_cache: dict[str, tuple[float, float]] = {}
-
-
-def _document_metrics(path: str) -> tuple[float, float]:
-    # (body font size, width of the body text area), both for the whole
-    # document: a single page (a picture with a short caption) says little.
-
-    if path in _metrics_cache:
-        return _metrics_cache[path]
+def analyze(path: str) -> dict | None:
+    # Measurements every page is rendered against, for the whole document (a
+    # single page — a picture with a short caption — says little): the body
+    # text's font size and the width of its text area. None when the PDF has
+    # no text at all (a scan). Run once at upload; storage.py keeps the result.
 
     votes: dict[float, int] = {}
     pages: list[list[tuple[float, float, float]]] = []
@@ -97,7 +83,9 @@ def _document_metrics(path: str) -> tuple[float, float]:
                     lines.append((size, line["bbox"][0], line["bbox"][2]))
             pages.append(lines)
 
-    body_size = max(votes, key=votes.get) if votes else 12.0
+    if not votes:
+        return None
+    body_size = max(votes, key=votes.get)
 
     # Per page (mirrored margins shift the text left/right between pages),
     # then the typical page.
@@ -109,10 +97,9 @@ def _document_metrics(path: str) -> tuple[float, float]:
     if widths:
         text_width = statistics.median(widths)
     else:
-        text_width = statistics.median(page_widths) * 0.75 if page_widths else 450.0
+        text_width = statistics.median(page_widths) * 0.75
 
-    _metrics_cache[path] = (body_size, text_width)
-    return body_size, text_width
+    return {"body_size": body_size, "text_width": text_width}
 
 
 def _x_overlap(a, b) -> bool:
@@ -341,14 +328,14 @@ def _text_block_data(block: dict, page_num: int, area: tuple[float, float], body
     }
 
 
-def render_page(path: str, page_num: int) -> dict:
-    """page_num is 1-indexed."""
+def render_page(path: str, page_num: int, metrics: dict) -> dict:
+    """page_num is 1-indexed; metrics from analyze()."""
     with fitz.open(path) as doc:
         if not 1 <= page_num <= len(doc):
             raise ValueError(f"Page {page_num} out of range (document has {len(doc)} pages)")
 
         page = doc[page_num - 1]
-        body_size, text_width = _document_metrics(path)
+        body_size, text_width = metrics["body_size"], metrics["text_width"]
 
         # "index" (the position in PyMuPDF's list) is what render_image() takes.
         texts, pictures = [], []
@@ -394,7 +381,7 @@ def render_page(path: str, page_num: int) -> dict:
         return {"page": page_num, "total_pages": len(doc), "blocks": blocks_out}
 
 
-def render_image(path: str, page_num: int, index: int) -> tuple[bytes, str]:
+def render_image(path: str, page_num: int, index: int, metrics: dict) -> tuple[bytes, str]:
     # Renders the page area under the picture rather than extracting the
     # embedded file: that copes with masks, CMYK, rotation and odd formats.
     with fitz.open(path) as doc:
@@ -409,8 +396,7 @@ def render_image(path: str, page_num: int, index: int) -> tuple[bytes, str]:
         clip = fitz.Rect(block["bbox"]) & page.rect
         if clip.is_empty:
             raise ValueError("Image not found")
-        _, text_width = _document_metrics(path)
-        zoom = min(IMAGE_FULL_WIDTH_PX / text_width, IMAGE_MAX_PX / max(clip.width, clip.height))
+        zoom = min(IMAGE_FULL_WIDTH_PX / metrics["text_width"], IMAGE_MAX_PX / max(clip.width, clip.height))
         pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom), clip=clip, alpha=False)
         if block.get("ext") in ("jpeg", "jpg", "jpx"):
             return pix.tobytes("jpeg", jpg_quality=85), "image/jpeg"

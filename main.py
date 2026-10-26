@@ -55,15 +55,16 @@ async def upload(file: UploadFile, title: str = Form(...), source_lang: str = Fo
     raw = await file.read()
 
     if suffix == ".pdf":
-        # Pages are kept as their own layout (see pdf_render.py) and
-        # rendered on demand, so we just store the file — no upload-time
-        # extraction — beyond a quick check that there's text to find at all.
+        # Pages are kept as their own layout (see pdf_render.py) and rendered
+        # on demand, so only the measurements every page needs are taken here
+        # (which also tells whether there's any text at all).
         with tempfile.NamedTemporaryFile(suffix=".pdf") as tmp:
             tmp.write(raw)
             tmp.flush()
-            if not pdf_render.has_extractable_text(tmp.name):
-                raise HTTPException(400, "PDF appears to be a scan with no extractable text (OCR not supported).")
-        entry = storage.save_pdf(title, source_lang, raw)
+            metrics = pdf_render.analyze(tmp.name)
+        if metrics is None:
+            raise HTTPException(400, "PDF appears to be a scan with no extractable text (OCR not supported).")
+        entry = storage.save_pdf(title, source_lang, raw, metrics)
         return entry
     elif suffix == ".epub":
         # Kept as uploaded and rendered chapter by chapter (see epub_render.py);
@@ -96,7 +97,7 @@ def import_url(req: ImportUrlRequest):
     # Pictures are downloaded (with limits, see images.py) and kept next to the text.
     # A picture that can't be fetched is left out; it never fails the import.
     blocks, image_files = images.localize(blocks, referer=req.url)
-    entry = storage.save_blocks(title, req.source_lang, blocks, kind="url")
+    entry = storage.save_article(title, req.source_lang, blocks)
     try:
         images.save_images(entry["id"], image_files)
     except OSError:
@@ -123,6 +124,11 @@ def import_video(req: ImportVideoRequest):
     return storage.save_video(title, req.source_lang, video_id, result["segments"], result["subtitle_source"])
 
 
+@app.get("/api/languages")
+def languages():
+    return [{"code": code, **lang} for code, lang in LANGUAGES.items()]
+
+
 @app.get("/api/texts")
 def list_texts():
     return storage.list_texts()
@@ -136,24 +142,42 @@ def get_text(text_id: str):
     return entry
 
 
+def _pdf(text_id: str) -> tuple[str, dict]:
+    # The stored PDF and its measurements (see pdf_render.analyze).
+    found = storage.get_original(text_id, "pdf")
+    if found is None:
+        raise HTTPException(404, "PDF not found")
+    path, entry = found
+    metrics = entry.get("metrics")
+    if metrics is None:  # uploaded before they were taken at upload: once, then kept
+        metrics = pdf_render.analyze(str(path))
+        if metrics is None:
+            raise HTTPException(404, "PDF has no text")
+        storage.update_entry(text_id, metrics=metrics)
+    return str(path), metrics
+
+
+def _epub_path(text_id: str) -> str:
+    found = storage.get_original(text_id, "epub")
+    if found is None:
+        raise HTTPException(404, "EPUB not found")
+    return str(found[0])
+
+
 @app.get("/api/texts/{text_id}/pdf-page/{page_num}")
 def get_pdf_page(text_id: str, page_num: int):
-    path = storage.get_pdf_path(text_id)
-    if path is None:
-        raise HTTPException(404, "PDF not found")
+    path, metrics = _pdf(text_id)
     try:
-        return pdf_render.render_page(str(path), page_num)
+        return pdf_render.render_page(path, page_num, metrics)
     except ValueError as e:
         raise HTTPException(404, str(e))
 
 
 @app.get("/api/texts/{text_id}/pdf-page/{page_num}/images/{index}")
 def get_pdf_image(text_id: str, page_num: int, index: int):
-    path = storage.get_pdf_path(text_id)
-    if path is None:
-        raise HTTPException(404, "PDF not found")
+    path, metrics = _pdf(text_id)
     try:
-        data, media_type = pdf_render.render_image(str(path), page_num, index)
+        data, media_type = pdf_render.render_image(path, page_num, index, metrics)
     except ValueError as e:
         raise HTTPException(404, str(e))
     # The PDF never changes, but how it's rendered might: a day, not forever.
@@ -163,22 +187,16 @@ def get_pdf_image(text_id: str, page_num: int, index: int):
 
 @app.get("/api/texts/{text_id}/epub-chapter/{chapter}")
 def get_epub_chapter(text_id: str, chapter: int):
-    path = storage.get_epub_path(text_id)
-    if path is None:
-        raise HTTPException(404, "EPUB not found")
     try:
-        return epub_render.render_chapter(str(path), chapter)
+        return epub_render.render_chapter(_epub_path(text_id), chapter)
     except epub_render.EpubError as e:
         raise HTTPException(404, str(e))
 
 
 @app.get("/api/texts/{text_id}/epub-image/{member:path}")
 def get_epub_image(text_id: str, member: str):
-    path = storage.get_epub_path(text_id)
-    if path is None:
-        raise HTTPException(404, "EPUB not found")
     try:
-        data, media_type = epub_render.read_image(str(path), member)
+        data, media_type = epub_render.read_image(_epub_path(text_id), member)
     except epub_render.EpubError as e:
         raise HTTPException(404, str(e))
     return Response(data, media_type=media_type, headers={"Cache-Control": "public, max-age=86400",
@@ -215,8 +233,8 @@ def delete_text(text_id: str):
 def translate(req: TranslateRequest):
     try:
         translation = llm.translate(req.phrase, req.context, req.source_lang, req.target_lang)
-    except llm.RateLimitExceeded as e:
-        raise HTTPException(429, str(e))
+    except llm.LLMError as e:
+        raise HTTPException(e.status_code, str(e))
     return {"translation": translation}
 
 
@@ -224,10 +242,8 @@ def translate(req: TranslateRequest):
 def explain(req: ExplainRequest):
     try:
         result = llm.explain(req.phrase, req.context, req.source_lang, req.target_lang)
-    except llm.RateLimitExceeded as e:
-        raise HTTPException(429, str(e))
-    except Exception as e:
-        raise HTTPException(502, f"LLM explain failed: {e}")
+    except llm.LLMError as e:
+        raise HTTPException(e.status_code, str(e))
     return result
 
 

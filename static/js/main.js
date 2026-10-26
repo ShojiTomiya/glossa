@@ -1,9 +1,10 @@
 import { state } from "./state.js";
 import {
   brand, topbarReaderActions, libraryView, readerView, readerTitle, readerContent, targetLangSelect, backBtn,
-  bookmarkJumpBtn, pdfReader, pdfPage, pdfPrevBtn, pdfNextBtn, pdfPageIndicator, bookReader,
+  bookmarkJumpBtn, pdfReader, pdfPage, pagePrevBtn, pageNextBtn, pageIndicator, bookReader,
 } from "./dom.js";
 import "./settings.js";
+import { loadLanguages } from "./languages.js";
 import { initLibrary, loadLibrary } from "./library.js";
 import { renderReaderBlocks, restoreReaderPosition, forgetBookmark } from "./reader.js";
 import { hidePopup } from "./selection.js";
@@ -22,7 +23,7 @@ let openToken = 0;
 // whether the page arrows / position indicator are used.
 function showReader(reader, arrows) {
   for (const el of [readerContent, pdfReader, bookReader]) el.classList.toggle("hidden", el !== reader);
-  for (const el of [pdfPrevBtn, pdfNextBtn, pdfPageIndicator]) el.classList.toggle("hidden", !arrows);
+  for (const el of [pagePrevBtn, pageNextBtn, pageIndicator]) el.classList.toggle("hidden", !arrows);
   bookmarkJumpBtn.classList.add("hidden");
 }
 
@@ -53,8 +54,7 @@ async function openText(id) {
     return;
   }
 
-  // EPUBs uploaded before epub_render.py come with their blocks and use the text reader below.
-  if (state.currentText.kind === "epub" && !state.currentText.blocks) {
+  if (state.currentText.kind === "epub") {
     showReader(bookReader, true);
     window.scrollTo(0, 0);
     showBookLoading();
@@ -78,18 +78,20 @@ backBtn.addEventListener("click", () => {
   readerContent.replaceChildren();
   pdfPage.replaceChildren();
   closeBook();
-  pdfPageIndicator.textContent = "";
+  pageIndicator.textContent = "";
   hidePopup();
   readerView.style.display = "none";
   libraryView.style.display = "block";
   topbarReaderActions.style.display = "none";
   brand.style.display = "block";
   bookmarkJumpBtn.classList.add("hidden");
-  pdfPrevBtn.classList.add("hidden");
-  pdfNextBtn.classList.add("hidden");
-  pdfPageIndicator.classList.add("hidden");
+  pagePrevBtn.classList.add("hidden");
+  pageNextBtn.classList.add("hidden");
+  pageIndicator.classList.add("hidden");
   loadLibrary();
 });
 
+// The language lists in the page, and the library's language badges, need these first.
+await loadLanguages();
 initLibrary(openText);
 loadLibrary();

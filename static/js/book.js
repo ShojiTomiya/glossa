@@ -1,8 +1,8 @@
 import { state } from "./state.js";
-import { pdfPrevBtn, pdfNextBtn, pdfPageIndicator, bookReader, bookViewport, bookContent } from "./dom.js";
+import { pagePrevBtn, pageNextBtn, pageIndicator, bookReader, bookViewport, bookContent } from "./dom.js";
 import { hidePopup, handleTextSelection } from "./selection.js";
 import { appendRuns } from "./reader.js";
-import { getPdfContext } from "./pdf.js";
+import { getBlockContext } from "./context.js";
 
 /* ---------- EPUB reader, laid out in pages ----------
  *
@@ -16,8 +16,9 @@ import { getPdfContext } from "./pdf.js";
  * the chapter and its first block on the page; after a resize, a font change
  * or reopening the book, the reader goes back to the page holding that block.
  *
- * Blocks use the PDF block classes (pblock, muted, bold, pimage), so the PDF
- * reader's selection context and styles apply to them unchanged.
+ * Blocks use the PDF block classes (pblock, muted, bold, pimage) for their
+ * styles, and data-role like PDF blocks for the selection context
+ * (getBlockContext in context.js).
  */
 
 const PAGE_GAP = 48; // px between two pages in the column strip
@@ -62,6 +63,7 @@ function appendBookRuns(el, runs) {
 function renderBookImage(block, textId) {
   const figure = document.createElement("div");
   figure.className = "efigure";
+  figure.dataset.role = "skip";
 
   const img = document.createElement("img");
   img.className = "pimage";
@@ -94,17 +96,25 @@ function renderBookImage(block, textId) {
   return figure;
 }
 
+// See getBlockContext (context.js): text continues across ordinary
+// paragraphs and list items, skips footnotes, stops at anything else.
+function bookBlockRole(block) {
+  if (block.small) return "skip";
+  const body = (block.kind === "paragraph" || block.kind === "list-item") && !block.align && !block.pre;
+  return body ? "body" : "stop";
+}
+
 function renderBookBlock(block, textId) {
   if (block.kind === "image") return renderBookImage(block, textId);
   if (block.kind === "separator") {
     const hr = document.createElement("hr");
-    hr.className = "esep";
+    hr.className = "esep"; // no data-role: a scene break ends the sentence's context
     return hr;
   }
 
   const el = document.createElement(block.kind === "heading" ? "div" : "p");
   el.className = "pblock";
-  // looksLikeBodyParagraph() (pdf.js) reads the size from the inline style.
+  el.dataset.role = bookBlockRole(block);
   let size = 1;
   if (block.kind === "heading") {
     el.classList.add("bold", "eheading");
@@ -172,9 +182,9 @@ function updateIndicator() {
   // numbers, which change with the window and font size anyway.
   const { before, share } = book.progress || { before: 0, share: 0 };
   const percent = Math.min(100, Math.round((before + share * ((book.page + 1) / book.pages)) * 100));
-  pdfPageIndicator.textContent = `${percent}%`;
-  pdfPrevBtn.disabled = book.chapter <= 1 && book.page <= 0;
-  pdfNextBtn.disabled = book.chapter >= book.total && book.page >= book.pages - 1;
+  pageIndicator.textContent = `${percent}%`;
+  pagePrevBtn.disabled = book.chapter <= 1 && book.page <= 0;
+  pageNextBtn.disabled = book.chapter >= book.total && book.page >= book.pages - 1;
 }
 
 function setPage(page) {
@@ -222,7 +232,7 @@ async function showChapter(textId, num, target) {
     // e.g. a remembered chapter past the end: start from the beginning instead
     if (num > 1) return showChapter(textId, 1, { page: 0 });
     bookContent.replaceChildren();
-    pdfPageIndicator.textContent = "";
+    pageIndicator.textContent = "";
     return;
   }
 
@@ -245,7 +255,7 @@ export function showBookLoading() {
   p.textContent = "Loading…";
   bookContent.style.transform = "";
   bookContent.replaceChildren(p);
-  pdfPageIndicator.textContent = "";
+  pageIndicator.textContent = "";
 }
 
 export async function openBook(textId) {
@@ -281,8 +291,8 @@ function previousPage() {
 
 /* ---------- listeners ---------- */
 
-pdfNextBtn.addEventListener("click", nextPage);
-pdfPrevBtn.addEventListener("click", previousPage);
+pageNextBtn.addEventListener("click", nextPage);
+pagePrevBtn.addEventListener("click", previousPage);
 
 document.addEventListener("keydown", (e) => {
   if (!isOpenBook() || e.altKey || e.ctrlKey || e.metaKey) return;
@@ -309,5 +319,5 @@ bookContent.addEventListener("mouseup", () => {
   const phrase = selection.toString().trim();
   if (!phrase || selection.rangeCount === 0) return;
   const range = selection.getRangeAt(0);
-  handleTextSelection(phrase, getPdfContext(range), range.getBoundingClientRect());
+  handleTextSelection(phrase, getBlockContext(range), range.getBoundingClientRect());
 });

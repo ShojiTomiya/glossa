@@ -3,7 +3,7 @@ import { readerView, readerContent, bookmarkJumpBtn } from "./dom.js";
 import { extractSentenceContext, globalTextOffset } from "./context.js";
 import { handleTextSelection } from "./selection.js";
 
-// Continuous reader for URL imports (and EPUBs uploaded before the paged reader, book.js).
+// Continuous reader for articles (URL imports).
 
 // The clickable line bookmark (a dot beside each line). Switched off: the
 // reading position is now remembered by itself (see "Reading position"
@@ -228,8 +228,8 @@ export function renderReaderBlocks(blocks) {
 }
 
 // Appends styled text runs ({text, italic, bold}) to `container`. A literal
-// "\n" within a run's text (from an EPUB <br>) becomes a real <br> element,
-// not just a character — used by both the PDF and EPUB renderers.
+// "\n" within a run's text (a <br>) becomes a real <br> element, not just a
+// character — used by the article, PDF and EPUB renderers.
 export function appendRuns(container, runs, joinWithSpace) {
   runs.forEach((run, i) => {
     if (joinWithSpace && i > 0) container.appendChild(document.createTextNode(" "));

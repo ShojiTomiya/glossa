@@ -10,7 +10,7 @@ from pathlib import Path
 from phonemizer.backend import EspeakBackend
 from phonemizer.backend.espeak.wrapper import EspeakWrapper
 
-from config import ESPEAK_VOICES
+from config import LANGUAGES
 
 log = logging.getLogger(__name__)
 
@@ -81,7 +81,7 @@ def add_phonetics(words, lang_code: str) -> None:
         return
 
     ipa = [""] * len(words)
-    voice = ESPEAK_VOICES.get(lang_code)
+    voice = LANGUAGES.get(lang_code, {}).get("espeak")
     if voice:
         cleaned = [_clean(w.get("text", "")) for w in words]
         try:

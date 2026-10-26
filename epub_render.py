@@ -414,12 +414,7 @@ BOOK_CACHE_SIZE = 3
 _book_cache: dict[str, tuple[float, dict]] = {}
 
 
-def _load(path: str) -> dict:
-    mtime = Path(path).stat().st_mtime
-    cached = _book_cache.get(path)
-    if cached and cached[0] == mtime:
-        return cached[1]
-
+def _parse(path: str) -> dict:
     try:
         zf = zipfile.ZipFile(path)
     except (zipfile.BadZipFile, OSError) as e:
@@ -452,7 +447,15 @@ def _load(path: str) -> dict:
         raise EpubError("EPUB has no extractable text content.")
     # Characters per chapter, for the reader's "how far into the book" figure.
     lengths = [sum(len(r["text"]) for b in blocks for r in b.get("runs", [])) + 1 for blocks in chapters]
-    book = {"title": package["title"], "chapters": chapters, "lengths": lengths}
+    return {"title": package["title"], "chapters": chapters, "lengths": lengths}
+
+
+def _load(path: str) -> dict:
+    mtime = Path(path).stat().st_mtime
+    cached = _book_cache.get(path)
+    if cached and cached[0] == mtime:
+        return cached[1]
+    book = _parse(path)
     # A few books are enough (the open one, and one switched away from).
     while len(_book_cache) >= BOOK_CACHE_SIZE:
         _book_cache.pop(next(iter(_book_cache)))
@@ -461,13 +464,10 @@ def _load(path: str) -> dict:
 
 
 def inspect(path: str) -> dict:
-    # Upload-time check; raises EpubError when there's nothing to read.
-    book = _load(path)
+    # Upload-time check; raises EpubError when there's nothing to read. Not
+    # cached: the upload's temporary file is gone right after.
+    book = _parse(path)
     return {"title": book["title"], "chapters": len(book["chapters"])}
-
-
-def chapter_count(path: str) -> int:
-    return len(_load(path)["chapters"])
 
 
 def render_chapter(path: str, chapter: int) -> dict:
