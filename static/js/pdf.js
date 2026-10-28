@@ -1,5 +1,5 @@
 import { state } from "./state.js";
-import { pdfPage, pagePrevBtn, pageNextBtn, pageIndicator } from "./dom.js";
+import { pdfReader, pdfPage, pagePrevBtn, pageNextBtn, pageIndicator } from "./dom.js";
 import { getBlockContext } from "./context.js";
 import { hidePopup, handleTextSelection } from "./selection.js";
 import { appendRuns } from "./reader.js";
@@ -151,9 +151,15 @@ export async function loadPdfPage(textId, num) {
   keepPagesAround(textId, pdfPageNum, pdfTotalPages);
 }
 
-// The arrows are shared with the book reader (book.js), which handles them for EPUBs.
+// The page shown in the original layout (for switching to reading mode there).
+export function currentPdfPage() {
+  return pdfPageNum;
+}
+
+// The arrows are shared with the paged reader (book.js), which handles them
+// for EPUBs and for PDFs in reading mode.
 function isOpenPdf() {
-  return state.currentText && state.currentText.kind === "pdf";
+  return state.currentText && state.currentText.kind === "pdf" && !pdfReader.classList.contains("hidden");
 }
 
 pagePrevBtn.addEventListener("click", () => {

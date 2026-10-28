@@ -1,7 +1,11 @@
+import math
+import re
 import statistics
+from pathlib import Path
 
 import fitz
 
+FLAG_SUPERSCRIPT = 1
 FLAG_ITALIC = 2
 FLAG_BOLD = 16
 
@@ -20,6 +24,13 @@ MAX_FLOAT_SHARE = 0.6
 # reader column, so it stays sharp on HiDPI screens); no side goes over the cap.
 IMAGE_FULL_WIDTH_PX = 1800
 IMAGE_MAX_PX = 2400
+# Reading mode is loaded in parts of this many pages (the reader turns from
+# one into the next as it does between EPUB chapters).
+PAGES_PER_PART = 10
+# A raised, small "12", "*" or "†" in the text: a footnote reference.
+NOTE_REF_RE = re.compile(r"^[\d*†‡§]{1,3}$")
+# Text ending like this finishes a sentence (closing quotes/brackets allowed).
+SENTENCE_END_RE = re.compile(r"[.!?…][\"'»”’)\]]*\s*$")
 
 
 def _lines_same_row(a: dict, b: dict) -> bool:
@@ -47,11 +58,17 @@ def _group_rows(lines: list) -> list[list]:
 
 
 def _runs(spans: list, block_italic: bool) -> list[dict]:
-    return [
-        {"text": s["text"], "italic": bool(s["flags"] & FLAG_ITALIC) and not block_italic}
-        for s in spans
-        if s["text"]
-    ]
+    runs = []
+    for s in spans:
+        if not s["text"]:
+            continue
+        run = {"text": s["text"], "italic": bool(s["flags"] & FLAG_ITALIC) and not block_italic}
+        # Reading mode shows these like EPUB note references, outside the
+        # selectable text; the original layout prints them as they are.
+        if s["flags"] & FLAG_SUPERSCRIPT and NOTE_REF_RE.match(s["text"].strip()):
+            run["note"] = True
+        runs.append(run)
+    return runs
 
 
 def analyze(path: str) -> dict | None:
@@ -328,57 +345,61 @@ def _text_block_data(block: dict, page_num: int, area: tuple[float, float], body
     }
 
 
+def _page_blocks(doc, page_num: int, metrics: dict) -> list[dict]:
+    # One page's blocks in reading order, as the original-layout reader shows
+    # them; reading mode builds on the same blocks.
+    page = doc[page_num - 1]
+    body_size, text_width = metrics["body_size"], metrics["text_width"]
+
+    # "index" (the position in PyMuPDF's list) is what render_image() takes.
+    texts, pictures = [], []
+    for i, block in enumerate(page.get_text("dict")["blocks"]):
+        block["index"], block["page"] = i, page_num
+        if block.get("type") == 1:
+            pictures.append(block)
+        elif block.get("type") == 0 and "".join(s["text"] for l in block["lines"] for s in l["spans"]).strip():
+            texts.append(block)
+
+    # PyMuPDF's own block order follows the file, which isn't always the
+    # reading order (headers/footers especially), so it's rebuilt from
+    # the layout — column by column where the page has columns.
+    ordered, columns, edge = _reading_order(texts, page.rect.height, text_width)
+
+    seen = set()
+    content_pictures = []
+    for pic in pictures:
+        if _is_content_image(pic, page, texts):
+            key = tuple(round(v) for v in pic["bbox"])  # a picture and its mask can come twice
+            if key not in seen:
+                seen.add(key)
+                content_pictures.append(pic)
+    placed = _place_images(content_pictures, ordered, columns, text_width)
+
+    page_area = (0.0, page.rect.width)
+    column_area = {id(b): (c["box"][0], c["box"][2]) for c in columns for b in c["blocks"]}
+    wrapped = {id(b) for b in texts
+               if any(_beside(line["bbox"], p["bbox"]) for p in content_pictures for line in b["lines"])}
+
+    blocks_out = []
+    for pos, block in enumerate(ordered):
+        blocks_out.extend(placed.get(pos, []))
+        data = _text_block_data(block, page_num, column_area.get(id(block), page_area), body_size,
+                                id(block) in wrapped)
+        # Running header/footer (title, page number): the reader skips it when a
+        # sentence's context continues onto the previous or next page.
+        if id(block) in edge:
+            data["edge"] = True
+        blocks_out.append(data)
+    blocks_out.extend(placed.get(len(ordered), []))
+    return blocks_out
+
+
 def render_page(path: str, page_num: int, metrics: dict) -> dict:
     """page_num is 1-indexed; metrics from analyze()."""
     with fitz.open(path) as doc:
         if not 1 <= page_num <= len(doc):
             raise ValueError(f"Page {page_num} out of range (document has {len(doc)} pages)")
-
-        page = doc[page_num - 1]
-        body_size, text_width = metrics["body_size"], metrics["text_width"]
-
-        # "index" (the position in PyMuPDF's list) is what render_image() takes.
-        texts, pictures = [], []
-        for i, block in enumerate(page.get_text("dict")["blocks"]):
-            block["index"], block["page"] = i, page_num
-            if block.get("type") == 1:
-                pictures.append(block)
-            elif block.get("type") == 0 and "".join(s["text"] for l in block["lines"] for s in l["spans"]).strip():
-                texts.append(block)
-
-        # PyMuPDF's own block order follows the file, which isn't always the
-        # reading order (headers/footers especially), so it's rebuilt from
-        # the layout — column by column where the page has columns.
-        ordered, columns, edge = _reading_order(texts, page.rect.height, text_width)
-
-        seen = set()
-        content_pictures = []
-        for pic in pictures:
-            if _is_content_image(pic, page, texts):
-                key = tuple(round(v) for v in pic["bbox"])  # a picture and its mask can come twice
-                if key not in seen:
-                    seen.add(key)
-                    content_pictures.append(pic)
-        placed = _place_images(content_pictures, ordered, columns, text_width)
-
-        page_area = (0.0, page.rect.width)
-        column_area = {id(b): (c["box"][0], c["box"][2]) for c in columns for b in c["blocks"]}
-        wrapped = {id(b) for b in texts
-                   if any(_beside(line["bbox"], p["bbox"]) for p in content_pictures for line in b["lines"])}
-
-        blocks_out = []
-        for pos, block in enumerate(ordered):
-            blocks_out.extend(placed.get(pos, []))
-            data = _text_block_data(block, page_num, column_area.get(id(block), page_area), body_size,
-                                    id(block) in wrapped)
-            # Running header/footer (title, page number): the reader skips it when a
-            # sentence's context continues onto the previous or next page.
-            if id(block) in edge:
-                data["edge"] = True
-            blocks_out.append(data)
-        blocks_out.extend(placed.get(len(ordered), []))
-
-        return {"page": page_num, "total_pages": len(doc), "blocks": blocks_out}
+        return {"page": page_num, "total_pages": len(doc), "blocks": _page_blocks(doc, page_num, metrics)}
 
 
 def render_image(path: str, page_num: int, index: int, metrics: dict) -> tuple[bytes, str]:
@@ -401,3 +422,191 @@ def render_image(path: str, page_num: int, index: int, metrics: dict) -> tuple[b
         if block.get("ext") in ("jpeg", "jpg", "jpx"):
             return pix.tobytes("jpeg", jpg_quality=85), "image/jpeg"
         return pix.tobytes("png"), "image/png"
+
+
+# ------------------------------------------------------------- reading mode
+#
+# The PDF read like a book: the pages' blocks run on as one text, in parts of
+# PAGES_PER_PART pages, in the same block format as epub_render.py (the same
+# paged reader shows both). Running headers/footers and page numbers are left
+# out, a paragraph broken by a page end is joined back together, pictures
+# stand between paragraphs (with their caption), and footnotes stay where the
+# page ended them — after the paragraph that closes the page. Every block
+# keeps "page", the original page it starts on.
+
+
+def _text(block: dict) -> str:
+    return " ".join(r["text"] for row in block["rows"] for cell in row["cells"] for r in cell)
+
+
+def _is_body(block: dict) -> bool:
+    # Ordinary body text (not a heading, title line, footnote, header...).
+    return (block["kind"] == "paragraph" and not block["bold"] and not block["muted"]
+            and not block.get("edge") and block["align"] == "left" and 0.9 <= block["rel_size"] <= 1.15)
+
+
+def _is_aside(block: dict) -> bool:
+    # What can sit between two halves of a paragraph broken by a page end:
+    # a picture, a footnote (small or grey text).
+    if block["kind"] == "image":
+        return True
+    return block["muted"] or block["rel_size"] < 0.9
+
+
+def _main_blocks(blocks: list[dict]) -> list[dict]:
+    return [b for b in blocks if not b.get("edge") and not _is_aside(b)]
+
+
+def _ends_sentence(text: str) -> bool:
+    return bool(SENTENCE_END_RE.search(text))
+
+
+def _continues(before: list[dict], after: list[dict]) -> bool:
+    # Whether the page `after` opens by carrying on the paragraph that ends
+    # the page `before`.
+    main_before, main_after = _main_blocks(before), _main_blocks(after)
+    return bool(main_before and main_after and _is_body(main_before[-1]) and _is_body(main_after[0])
+                and not _ends_sentence(_text(main_before[-1])))
+
+
+def _flat_runs(block: dict, bold: bool) -> list[dict]:
+    # As the original layout shows a block: its runs one after another,
+    # separated by a space.
+    runs = []
+    for row in block["rows"]:
+        for cell in row["cells"]:
+            for run in cell:
+                if runs:
+                    runs.append({"text": " ", "italic": False, "bold": False})
+                runs.append({**run, "bold": bold})
+    return runs
+
+
+def _join_runs(a: list[dict], b: list[dict]) -> list[dict]:
+    # A paragraph's continuation on the next page; a word hyphenated across
+    # the page end ("acomo-" + "dada") is joined back together.
+    a, b = [dict(r) for r in a], [dict(r) for r in b]
+    while a and not a[-1]["text"].strip():
+        a.pop()
+    if a and b:
+        a[-1]["text"] = a[-1]["text"].rstrip()
+        b[0]["text"] = b[0]["text"].lstrip()
+        if re.search(r"[^\W\d_]-$", a[-1]["text"]) and b[0]["text"][:1].islower():
+            a[-1]["text"] = a[-1]["text"][:-1]
+            return a + b
+    return a + [{"text": " ", "italic": False, "bold": False}] + b
+
+
+def _reading_blocks(block: dict, page: int) -> list[dict]:
+    # One original-layout block as reading-mode block(s).
+    if block["kind"] == "image":
+        return [{"kind": "image", "page": page, "index": block["index"],
+                 "width_pct": block["width"], "aspect": block["aspect"]}]
+    if block["kind"] == "rows":
+        # Side-by-side cells (a contents line, a little table): one line each,
+        # the cells joined with an em dash, as article tables are.
+        out = []
+        for row in block["rows"]:
+            runs = []
+            for cell in row["cells"]:
+                if runs:
+                    runs.append({"text": " — ", "italic": False, "bold": False})
+                runs.extend({**r, "bold": block["bold"]} for r in cell)
+            out.append({"kind": "table-row", "page": page, "runs": runs})
+        return out
+
+    text = _text(block).strip()
+    data = {"page": page}
+    if block["align"] in ("center", "right"):
+        data["align"] = block["align"]
+    if _is_aside(block):
+        return [{"kind": "paragraph", "small": True, **data, "runs": _flat_runs(block, block["bold"])}]
+    if block["rel_size"] >= 1.2 or (block["bold"] and len(text) <= 120):
+        return [{"kind": "heading", "size": round(min(max(block["rel_size"], 1.0), 2.0), 2), **data,
+                 "runs": _flat_runs(block, False)}]
+    return [{"kind": "paragraph", **data, "runs": _flat_runs(block, block["bold"])}]
+
+
+def _is_caption(block: dict) -> bool:
+    return (block["kind"] == "paragraph" and not block.get("edge") and len(_text(block)) <= 200
+            and (block["align"] == "center" or block["rel_size"] < 0.95))
+
+
+# Building a part takes a moment (every page of it, plus its neighbours), and
+# the reader asks for the parts around the open one too: the last few are kept.
+PART_CACHE_SIZE = 6
+_part_cache: dict[tuple, dict] = {}
+
+
+def render_reading_part(path: str, part: int, metrics: dict) -> dict:
+    """part is 1-indexed; metrics from analyze()."""
+    key = (path, Path(path).stat().st_mtime, part)
+    if key not in _part_cache:
+        while len(_part_cache) >= PART_CACHE_SIZE:
+            _part_cache.pop(next(iter(_part_cache)))
+        _part_cache[key] = _build_reading_part(path, part, metrics)
+    return _part_cache[key]
+
+
+def _build_reading_part(path: str, part: int, metrics: dict) -> dict:
+    with fitz.open(path) as doc:
+        total = len(doc)
+        parts = math.ceil(total / PAGES_PER_PART)
+        if not 1 <= part <= parts:
+            raise ValueError(f"Part {part} out of range (document has {parts} parts)")
+        first = (part - 1) * PAGES_PER_PART + 1
+        last = min(total, part * PAGES_PER_PART)
+        pages = {n: _page_blocks(doc, n, metrics) for n in range(max(1, first - 1), min(total, last + 1) + 1)}
+
+    out: list[dict] = []
+    open_para = None  # index in `out` of a paragraph the next page may carry on
+
+    def merge_into(i: int, block: dict) -> None:
+        out[i]["runs"] = _join_runs(out[i]["runs"], _flat_runs(block, False))
+
+    for n in range(first, last + 1):
+        blocks = [b for b in pages[n] if not b.get("edge")]
+        last_main = None  # index in `out` of this page's last non-aside block
+        opening = True
+        i = 0
+        while i < len(blocks):
+            block = blocks[i]
+            i += 1
+            if opening and not _is_aside(block):
+                opening = False
+                if _is_body(block):
+                    if open_para is not None:
+                        merge_into(open_para, block)
+                        last_main = open_para
+                        continue
+                    if n == first and first > 1 and _continues(pages[first - 1], pages[first]):
+                        continue  # the end of the previous part's last paragraph: shown there
+            converted = _reading_blocks(block, n)
+            if block["kind"] == "image" and i < len(blocks) and _is_caption(blocks[i]):
+                converted[0]["caption"] = _flat_runs(blocks[i], False)  # kept on one page with the picture
+                i += 1
+            out.extend(converted)
+            if not _is_aside(block):
+                last_main = len(out) - 1
+                out[-1]["_body"] = _is_body(block)
+
+        open_para = None
+        if last_main is not None and out[last_main].get("_body"):
+            text = "".join(r["text"] for r in out[last_main]["runs"])
+            if not _ends_sentence(text):
+                open_para = last_main
+
+    # The last paragraph runs on past the part: finish it from the next page.
+    if open_para is not None and last < total and _continues(pages[last], pages[last + 1]):
+        merge_into(open_para, _main_blocks(pages[last + 1])[0])
+
+    for block in out:
+        block.pop("_body", None)
+    return {
+        "part": part,
+        "total_parts": parts,
+        "first_page": first,
+        "total_pages": total,
+        "progress": {"before": (first - 1) / total, "share": (last - first + 1) / total},
+        "blocks": out,
+    }

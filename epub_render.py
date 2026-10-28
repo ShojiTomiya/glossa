@@ -478,8 +478,9 @@ def render_chapter(path: str, chapter: int) -> dict:
         raise EpubError(f"Chapter {chapter} out of range (book has {len(chapters)} chapters)")
     total = sum(lengths)
     return {
-        "chapter": chapter,
-        "total_chapters": len(chapters),
+        # The same keys as a PDF's reading-mode parts: one paged reader shows both.
+        "part": chapter,
+        "total_parts": len(chapters),
         # Share of the book before this chapter, and this chapter's own share.
         "progress": {"before": sum(lengths[:chapter - 1]) / total, "share": lengths[chapter - 1] / total},
         "blocks": chapters[chapter - 1],

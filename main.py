@@ -139,6 +139,9 @@ def get_text(text_id: str):
     entry = storage.get_text(text_id)
     if entry is None:
         raise HTTPException(404, "Text not found")
+    if entry["kind"] == "pdf":
+        # The reader maps an original page to the reading-mode part that holds it.
+        entry = {**entry, "pages_per_part": pdf_render.PAGES_PER_PART}
     return entry
 
 
@@ -169,6 +172,15 @@ def get_pdf_page(text_id: str, page_num: int):
     path, metrics = _pdf(text_id)
     try:
         return pdf_render.render_page(path, page_num, metrics)
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+
+
+@app.get("/api/texts/{text_id}/pdf-part/{part}")
+def get_pdf_part(text_id: str, part: int):
+    path, metrics = _pdf(text_id)
+    try:
+        return pdf_render.render_reading_part(path, part, metrics)
     except ValueError as e:
         raise HTTPException(404, str(e))
 
