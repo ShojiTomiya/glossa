@@ -22,3 +22,7 @@ export const explainPanel = document.getElementById("explain-panel");
 export const bookReader = document.getElementById("book-reader");
 export const bookViewport = document.getElementById("book-viewport");
 export const bookContent = document.getElementById("book-content");
+
+// Phone-sized: the layout of mobile.css (same width as its media query in
+// index.html), the translation panel, reading mode only for PDFs.
+export const narrowScreen = window.matchMedia("(max-width: 700px)");

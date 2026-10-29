@@ -271,6 +271,12 @@ BASE_DIR = Path(__file__).parent
 app.mount("/static", RevalidatingStaticFiles(directory=BASE_DIR / "static"), name="static")
 
 
+# Browsers ask for /favicon.ico on their own, whatever the page links to.
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon():
+    return FileResponse(BASE_DIR / "static" / "favicon.png", media_type="image/png")
+
+
 @app.get("/")
 def index():
     return FileResponse(BASE_DIR / "static" / "index.html", headers={"Cache-Control": "no-cache"})

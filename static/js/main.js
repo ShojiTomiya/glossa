@@ -1,7 +1,7 @@
 import { state } from "./state.js";
 import {
   brand, topbarReaderActions, libraryView, readerView, readerTitle, readerContent, targetLangSelect, backBtn,
-  bookmarkJumpBtn, pdfReader, pdfPage, pagePrevBtn, pageNextBtn, pageIndicator, bookReader,
+  bookmarkJumpBtn, pdfReader, pdfPage, pagePrevBtn, pageNextBtn, pageIndicator, bookReader, narrowScreen,
 } from "./dom.js";
 import "./settings.js";
 import { loadLanguages } from "./languages.js";
@@ -33,7 +33,6 @@ function showReader(reader, arrows) {
 // in its original layout (page by page, by pdf.js), chosen in the settings
 // dialog and kept per PDF; a narrow screen (a phone) always gets reading
 // mode, as the original layout's pictures beside the text don't fit there.
-const narrowScreen = window.matchMedia("(max-width: 700px)");
 const pdfViewFieldset = document.getElementById("pdf-view-fieldset");
 
 function pdfModeKey(textId) {

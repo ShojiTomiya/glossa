@@ -1,6 +1,6 @@
 import { state } from "./state.js";
 import { pagePrevBtn, pageNextBtn, pageIndicator, bookReader, bookViewport, bookContent } from "./dom.js";
-import { hidePopup, handleTextSelection } from "./selection.js";
+import { hidePopup, addReadingArea } from "./selection.js";
 import { appendRuns } from "./reader.js";
 import { getBlockContext } from "./context.js";
 
@@ -387,6 +387,39 @@ document.addEventListener("keydown", (e) => {
   e.preventDefault();
 });
 
+// On a touch screen, a quick sideways swipe turns the page. A slow one, or
+// one while text is selected, is left alone: that's the finger selecting.
+const SWIPE_MIN_PX = 50;
+const SWIPE_MAX_MS = 600;
+let swipeStart = null;
+
+bookViewport.addEventListener(
+  "touchstart",
+  (e) => {
+    const touch = e.touches[0];
+    swipeStart = e.touches.length === 1 ? { x: touch.clientX, y: touch.clientY, time: performance.now() } : null;
+  },
+  { passive: true }
+);
+
+bookViewport.addEventListener(
+  "touchend",
+  (e) => {
+    const start = swipeStart;
+    swipeStart = null;
+    if (!start || performance.now() - start.time > SWIPE_MAX_MS) return;
+    const touch = e.changedTouches[0];
+    const dx = touch.clientX - start.x;
+    const dy = touch.clientY - start.y;
+    if (Math.abs(dx) < SWIPE_MIN_PX || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+    const selection = window.getSelection();
+    if (selection && !selection.isCollapsed) return;
+    if (dx < 0) nextPage();
+    else previousPage();
+  },
+  { passive: true }
+);
+
 window.addEventListener("resize", scheduleRelayout);
 document.addEventListener("glossa:settings", scheduleRelayout);
 
@@ -398,10 +431,4 @@ bookViewport.addEventListener("scroll", () => {
   bookViewport.scrollTop = 0;
 });
 
-bookContent.addEventListener("mouseup", () => {
-  const selection = window.getSelection();
-  const phrase = selection.toString().trim();
-  if (!phrase || selection.rangeCount === 0) return;
-  const range = selection.getRangeAt(0);
-  handleTextSelection(phrase, getBlockContext(range), range.getBoundingClientRect());
-});
+addReadingArea(bookContent, (range) => ({ phrase: range.toString().trim(), context: getBlockContext(range) }));

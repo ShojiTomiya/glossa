@@ -57,6 +57,41 @@ def _group_rows(lines: list) -> list[list]:
     return rows
 
 
+def _line_text(line: dict) -> str:
+    return "".join(s["text"] for s in line["spans"])
+
+
+def _split_paragraphs(block: dict) -> list[dict]:
+    # PyMuPDF often puts several paragraphs into one block when only an
+    # indented first line tells them apart. A new paragraph starts where a
+    # line is indented and the line before looks like a paragraph's last one:
+    # ending well short of the right margin, or ending a sentence. Lines
+    # indented because they run beside a picture follow a full line in the
+    # middle of a sentence, so they stay together.
+    rows = _group_rows(block["lines"])
+    if len(rows) < 2 or any(len(row) > 1 for row in rows):
+        return [block]
+    lines = [row[0] for row in rows]
+    sizes = [s["size"] for line in lines for s in line["spans"] if s["text"].strip()]
+    size = statistics.median(sizes) if sizes else 10
+    left = min(line["bbox"][0] for line in lines)
+    right = max(line["bbox"][2] for line in lines)
+
+    pieces, current = [], [lines[0]]
+    for before, line in zip(lines, lines[1:]):
+        indented = line["bbox"][0] - left >= 0.8 * size
+        last_line = right - before["bbox"][2] >= 2 * size or _ends_sentence(_line_text(before))
+        if indented and last_line:
+            pieces.append(current)
+            current = []
+        current.append(line)
+    pieces.append(current)
+    if len(pieces) == 1:
+        return [block]
+    return [{**block, "lines": piece, "sub": k, "bbox": _union([{"bbox": l["bbox"]} for l in piece])}
+            for k, piece in enumerate(pieces)]
+
+
 def _runs(spans: list, block_italic: bool) -> list[dict]:
     runs = []
     for s in spans:
@@ -69,6 +104,28 @@ def _runs(spans: list, block_italic: bool) -> list[dict]:
             run["note"] = True
         runs.append(run)
     return runs
+
+
+HYPHENATED_END_RE = re.compile(r"[^\W\d_][-\u00ad]$")
+LEADING_WORD_RE = re.compile(r"(\s*)(\S+)(.*)", re.S)
+
+
+def _join_hyphenated(lines: list[list[dict]]) -> None:
+    # A word hyphenated at the end of a line ("eve-" / "rywhere") put back
+    # together, in place: the reader joins a paragraph's lines with spaces,
+    # which would leave "eve- rywhere". Only before a lowercase letter, so
+    # "E-" / "Mail" keeps its hyphen. (A real hyphen that happens to fall at a
+    # line end before a lowercase word is joined too: there's no telling.)
+    for line, following in zip(lines, lines[1:]):
+        last = next((r for r in reversed(line) if r["text"].strip()), None)
+        first = next((r for r in following if r["text"].strip()), None)
+        if last is None or first is None or last.get("note") or first.get("note"):
+            continue
+        end = last["text"].rstrip()
+        match = LEADING_WORD_RE.match(first["text"])
+        if HYPHENATED_END_RE.search(end) and match and match.group(2)[:1].islower():
+            last["text"] = end[:-1] + match.group(2)
+            first["text"] = match.group(3)
 
 
 def analyze(path: str) -> dict | None:
@@ -329,19 +386,23 @@ def _text_block_data(block: dict, page_num: int, area: tuple[float, float], body
         align = "left"
 
     rows = _group_rows(block["lines"])
-    kind = "paragraph" if all(len(row) == 1 for row in rows) else "rows"
+    # Side-by-side cells (a contents line, a little table) only when most rows
+    # have them: one stray gap, say in a widely justified line, doesn't make
+    # a paragraph a table.
+    kind = "rows" if sum(len(row) > 1 for row in rows) * 2 > len(rows) else "paragraph"
+    cells = [[_runs(line["spans"], is_italic) for line in row] for row in rows]
+    if kind == "paragraph":
+        cells = [[[r for cell in row for r in cell]] for row in cells]
+        _join_hyphenated([row[0] for row in cells])
 
     return {
-        "id": f"{page_num}-{block['index']}",
+        "id": f"{page_num}-{block['index']}" + (f".{block['sub']}" if "sub" in block else ""),
         "kind": kind,
         "align": align,
         "rel_size": rel_size,
         "bold": is_bold,
         "muted": is_muted,
-        "rows": [
-            {"cells": [_runs(line["spans"], is_italic) for line in row]}
-            for row in rows
-        ],
+        "rows": [{"cells": [[r for r in cell if r["text"]] for cell in row]} for row in cells],
     }
 
 
@@ -357,8 +418,12 @@ def _page_blocks(doc, page_num: int, metrics: dict) -> list[dict]:
         block["index"], block["page"] = i, page_num
         if block.get("type") == 1:
             pictures.append(block)
-        elif block.get("type") == 0 and "".join(s["text"] for l in block["lines"] for s in l["spans"]).strip():
-            texts.append(block)
+        elif block.get("type") == 0:
+            # Lines of nothing but spaces (some PDFs indent a paragraph with a
+            # space glyph out on its own) would read as a table's empty cell.
+            block["lines"] = [l for l in block["lines"] if _line_text(l).strip()]
+            if block["lines"]:
+                texts.extend(_split_paragraphs(block))
 
     # PyMuPDF's own block order follows the file, which isn't always the
     # reading order (headers/footers especially), so it's rebuilt from

@@ -1,7 +1,7 @@
 import { state } from "./state.js";
 import { pdfReader, pdfPage, pagePrevBtn, pageNextBtn, pageIndicator } from "./dom.js";
 import { getBlockContext } from "./context.js";
-import { hidePopup, handleTextSelection } from "./selection.js";
+import { hidePopup, addReadingArea } from "./selection.js";
 import { appendRuns } from "./reader.js";
 
 /* ---------- PDF reader ---------- */
@@ -200,10 +200,7 @@ const pdfNeighbourPages = {
   after: () => bodyTextAtPageEdge(pageData.get(pdfPageNum + 1), true),
 };
 
-pdfPage.addEventListener("mouseup", () => {
-  const selection = window.getSelection();
-  const phrase = selection.toString().trim();
-  if (!phrase || selection.rangeCount === 0) return;
-  const range = selection.getRangeAt(0);
-  handleTextSelection(phrase, getBlockContext(range, pdfNeighbourPages), range.getBoundingClientRect());
-});
+addReadingArea(pdfPage, (range) => ({
+  phrase: range.toString().trim(),
+  context: getBlockContext(range, pdfNeighbourPages),
+}));

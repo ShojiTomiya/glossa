@@ -26,16 +26,16 @@ if (synth) {
 
 const normalise = (tag) => tag.toLowerCase().replace("_", "-");
 
-// Best voice for a language: a downloaded Premium/Enhanced one first, then
-// the exact region, then one that runs locally (Chrome's Google voices need
-// the internet).
+// Best voice for a language: a downloaded Premium/Enhanced one first (on iOS
+// only its voiceURI says so, not its name), then the exact region, then one
+// that runs locally (Chrome's Google voices need the internet).
 function voiceFor(lang) {
   const tag = normalise(speechTag(lang));
   const base = tag.split("-")[0];
   const candidates = voices.filter((v) => normalise(v.lang).split("-")[0] === base && !NOVELTY_VOICES.test(v.name));
   if (!candidates.length) return null;
   const score = (v) =>
-    (/premium|enhanced|natural|neural/i.test(v.name) ? 4 : 0) + (normalise(v.lang) === tag ? 2 : 0) + (v.localService ? 1 : 0);
+    (/premium|enhanced|natural|neural/i.test(`${v.name} ${v.voiceURI}`) ? 4 : 0) + (normalise(v.lang) === tag ? 2 : 0) + (v.localService ? 1 : 0);
   return candidates.reduce((best, v) => (score(v) > score(best) ? v : best));
 }
 

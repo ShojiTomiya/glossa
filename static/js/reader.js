@@ -1,7 +1,7 @@
 import { state } from "./state.js";
 import { readerView, readerContent, bookmarkJumpBtn } from "./dom.js";
 import { extractSentenceContext, globalTextOffset } from "./context.js";
-import { handleTextSelection } from "./selection.js";
+import { addReadingArea } from "./selection.js";
 
 // Continuous reader for articles (URL imports).
 
@@ -267,12 +267,4 @@ function getSentenceContext(range) {
   return extractSentenceContext(readerContent.textContent, start, end) || range.toString();
 }
 
-readerContent.addEventListener("mouseup", () => {
-  const selection = window.getSelection();
-  const phrase = selection.toString().trim();
-  if (!phrase || selection.rangeCount === 0) {
-    return;
-  }
-  const range = selection.getRangeAt(0);
-  handleTextSelection(phrase, getSentenceContext(range), range.getBoundingClientRect());
-});
+addReadingArea(readerContent, (range) => ({ phrase: range.toString().trim(), context: getSentenceContext(range) }));

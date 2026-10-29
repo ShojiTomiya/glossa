@@ -1,4 +1,4 @@
-import { handleTextSelection } from "./selection.js";
+import { addReadingArea } from "./selection.js";
 import { MAX_CONTEXT_CHARS } from "./context.js";
 
 /* Video mode: YouTube IFrame player + subtitle cues synced to playback.
@@ -9,10 +9,10 @@ import { MAX_CONTEXT_CHARS } from "./context.js";
  * while the video keeps playing.
  *
  * The cues sit in a fixed-height window next to the player; the active one is
- * kept in its middle. Selecting cue text pauses the video and hands the phrase
- * plus a context of the selected cues and a few neighbours to
- * handleTextSelection(), which owns the translate popup and the Explain panel
- * for every reader.
+ * kept in its middle. The cue list is a reading area (addReadingArea in
+ * selection.js, which owns the translate popup and the Explain panel for every
+ * reader): selecting cue text pauses the video and hands over the phrase plus
+ * a context of the selected cues and a few neighbours.
  */
 
 const videoReader = document.getElementById("video-reader");
@@ -479,20 +479,15 @@ function readVideoSelection(range) {
   return parts.length ? { phrase: parts.join(" "), first, last } : null;
 }
 
-function handleVideoSelection() {
-  if (!vs) return;
-  const selection = window.getSelection();
-  if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return;
-  const range = selection.getRangeAt(0);
+// Selecting in the subtitles (see addReadingArea in selection.js).
+addReadingArea(cueList, (range) => {
+  if (!vs) return null;
   const picked = readVideoSelection(range);
-  if (!picked) return;
-
+  if (!picked) return null;
   // Pause so the sentence stays put while it is being read.
   if (vs.player && typeof vs.player.pauseVideo === "function") vs.player.pauseVideo();
-
-  const context = buildVideoContext(vs.cues, picked.first, picked.last, MAX_CONTEXT_CHARS);
-  handleTextSelection(picked.phrase, context, range.getBoundingClientRect());
-}
+  return { phrase: picked.phrase, context: buildVideoContext(vs.cues, picked.first, picked.last, MAX_CONTEXT_CHARS) };
+});
 
 /* ---------- static listeners (registered once) ---------- */
 
@@ -500,26 +495,6 @@ cueList.addEventListener("click", (e) => {
   const button = e.target.closest(".cue-time");
   if (!button) return;
   seekToCue(Number(button.closest(".cue").dataset.index));
-});
-
-// Selecting is mousedown in the list ... mouseup anywhere (the drag may end
-// outside it). Requiring the mousedown also keeps clicks on the popup's own
-// buttons from re-running the translation for the still-selected text.
-let videoPointerDown = false;
-cueList.addEventListener("mousedown", (e) => {
-  if (e.button === 0) videoPointerDown = true;
-});
-document.addEventListener(
-  "mousedown",
-  (e) => {
-    if (!cueList.contains(e.target)) videoPointerDown = false;
-  },
-  true
-);
-document.addEventListener("mouseup", () => {
-  if (!videoPointerDown) return;
-  videoPointerDown = false;
-  handleVideoSelection();
 });
 
 videoFollowBtn.addEventListener("click", () => {

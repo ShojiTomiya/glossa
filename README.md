@@ -12,6 +12,7 @@ A personal reading app for learning languages. Upload a PDF or EPUB, import an a
 - **Explain** panel: per-word breakdown (base form, translation, IPA pronunciation, part of speech, grammatical details) plus a plain-language explanation of why the phrase uses that exact grammatical form. IPA is generated locally with eSpeak NG, not by the LLM. A speaker button next to each transcription reads the word aloud with the browser's built-in speech synthesis (the system's voices - on macOS, downloading an Enhanced/Premium voice for the language makes it sound much better)
 - Reading position is remembered automatically - the current page for PDFs, the place in the book for EPUBs (it survives font and window size changes), the line at the top of the screen for articles, the playback position for videos
 - Adjustable reading font/size and light/dark/default themes - applies everywhere, including PDFs
+- Works on a phone in the same browser (open the server from it, see Setup): a phone layout with the translation as a panel at the top or bottom of the screen (away from the selection), Explain as cards, EPUBs and PDFs turned with a swipe, and selecting text by touch translates it once the selection stops changing
 - Supported languages: German, Spanish, Italian, French, English, Polish (to add another, add it to `LANGUAGES` in config.py - the name, the eSpeak NG voice for the IPA (`espeak-ng --voices` lists them) and the language tag for the listen button; the app's language lists are built from it). For videos the language is the one spoken in the video, i.e. the subtitle language
 
 ## Stack
@@ -46,6 +47,8 @@ A personal reading app for learning languages. Upload a PDF or EPUB, import an a
 ```
 
 5. Open <http://127.0.0.1:8000>
+
+To use it from a phone on the same Wi-Fi, start the server with `uvicorn main:app --reload --host 0.0.0.0` and open `http://<your computer's IP>:8000` on the phone. There's no login: anyone on that network can then open the app (and use your API key), so do this on a network you trust.
 
 ## Using a local model instead of Groq
 

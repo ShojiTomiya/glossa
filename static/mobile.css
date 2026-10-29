@@ -1,0 +1,178 @@
+/* Phone layout. Loaded only on narrow screens (the media attribute of its
+   <link> in index.html, the same width as narrowScreen in static/js/dom.js),
+   on top of style.css: everything here only adjusts what's there. On such a
+   screen the reading column is the screen itself — it can't grow with the
+   font as on a laptop — so margins shrink, long words break, and the
+   translation popup becomes a panel across the screen (selection.js). */
+
+/* iOS zooms into any form field with text smaller than 16px when it's
+   tapped, and the page stays zoomed afterwards. */
+input,
+select,
+textarea {
+  font-size: 16px;
+}
+
+.wide-only {
+  display: none;
+}
+
+/* ---------- Topbar ---------- */
+
+#topbar {
+  gap: 8px;
+  padding: 10px 12px;
+}
+
+.brand {
+  font-size: 1.25rem;
+}
+
+.topbar-actions {
+  gap: 8px;
+  min-width: 0;
+}
+
+#reader-title {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+#target-lang-select {
+  max-width: 7.5em;
+}
+
+/* ---------- Library ---------- */
+
+.view {
+  padding: 16px 12px 40px;
+}
+
+.library-toolbar {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.library-toolbar .field-inline {
+  flex-wrap: wrap;
+}
+
+#text-list li {
+  padding: 10px 12px;
+  gap: 8px;
+}
+
+#text-list li > span:first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.text-actions {
+  gap: 8px;
+}
+
+/* ---------- Dialogs ---------- */
+
+dialog {
+  width: calc(100vw - 24px);
+  max-width: none;
+  padding: 18px 16px;
+}
+
+/* ---------- Readers ---------- */
+
+#reader-content,
+#pdf-page {
+  padding: 20px 16px 80px;
+}
+
+/* Room under the page for the page buttons, so they don't sit on the text. */
+#book-reader {
+  padding: 12px 16px 56px;
+}
+
+.page-nav-btn {
+  width: 36px;
+  height: 36px;
+  bottom: 10px;
+  font-size: 1rem;
+}
+
+.page-nav-btn-left {
+  left: 12px;
+}
+
+.page-nav-btn-right {
+  right: 12px;
+}
+
+/* A long word in a large heading would otherwise run off the screen. */
+.eheading,
+.pblock,
+.reader-line {
+  overflow-wrap: anywhere;
+}
+
+/* ---------- Translation panel (selection.js adds .sheet) ---------- */
+
+#popup.sheet {
+  position: fixed;
+  left: 8px;
+  right: 8px;
+  bottom: max(8px, env(safe-area-inset-bottom));
+  top: auto;
+  max-width: none;
+  max-height: 50vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+#popup.sheet.sheet-top {
+  top: 8px;
+  bottom: auto;
+}
+
+/* Explain: each word as a little card instead of a four-column table row. */
+.words-table,
+.words-table tbody,
+.words-table tr {
+  display: block;
+}
+
+.words-table tr {
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.words-table td {
+  display: inline;
+  border: none;
+  padding: 0;
+}
+
+.word-text,
+.word-phonetic {
+  white-space: normal;
+}
+
+.word-phonetic {
+  margin-left: 6px;
+}
+
+.word-translation,
+.word-details {
+  display: block !important;
+  padding: 2px 0 0 !important;
+}
+
+/* ---------- Video ---------- */
+
+#video-stage {
+  border-radius: 0;
+}
+
+.cue {
+  padding: 4px 3.2em;
+}

@@ -4,7 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>glossa</title>
+<link rel="icon" type="image/png" href="/static/favicon.png">
 <link rel="stylesheet" href="/static/style.css">
+<!-- Phone layout: same width as narrowScreen in static/js/dom.js -->
+<link rel="stylesheet" href="/static/mobile.css" media="(max-width: 700px)">
 <meta name="referrer" content="strict-origin-when-cross-origin">
 </head>
 <body>
@@ -13,12 +16,12 @@
   <span class="brand" id="brand">glossa</span>
 
   <div id="topbar-reader-actions" class="topbar-actions" style="display:none">
-    <button id="back-btn" class="btn btn-sm">&larr; Library</button>
+    <button id="back-btn" class="btn btn-sm" aria-label="Back to the library">&larr;<span class="wide-only"> Library</span></button>
     <span id="reader-title"></span>
     <span id="page-indicator" class="hidden"></span>
     <label class="field-inline">
-      Translate to
-      <select id="target-lang-select">
+      <span class="wide-only">Translate to</span>
+      <select id="target-lang-select" aria-label="Translate to">
       </select>
     </label>
   </div>
